@@ -80,6 +80,7 @@ page 62013 "D4P BC Environment Features"
                 Caption = 'Activate Feature';
                 Image = Action;
                 ToolTip = 'Activate the selected feature.';
+                Enabled = false;
 
                 trigger OnAction()
                 var
