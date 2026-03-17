@@ -18,19 +18,15 @@ codeunit 62037 D4PBCAutomationAPIClient
         IsInitialized: Boolean;
         NotInitializedErr: Label 'Automation API Client is not initialized. Call SetTenant before making API requests.';
 
-    procedure SetTenant(BCTenant: Record "D4P BC Tenant")
+    procedure SetContext(BCTenant: Record "D4P BC Tenant"; BCEnvironment: Record "D4P BC Environment")
     begin
-        if IsInitialized and (CurrentTenantId = BCTenant."Tenant ID") then
+        if IsInitialized and (CurrentTenantId = BCTenant."Tenant ID") and (EnvironmentName = BCEnvironment.Name) then
             exit;
 
-        RestClient := AutomRestClientFactory.CreateRestClient(BCTenant, EnvironmentName);
-        CurrentTenantId := BCTenant."Tenant ID";
-        IsInitialized := true;
-    end;
-
-    procedure SetEnvironment(BCEnvironment: Record "D4P BC Environment")
-    begin
         EnvironmentName := BCEnvironment.Name;
+        CurrentTenantId := BCTenant."Tenant ID";
+        RestClient := AutomRestClientFactory.CreateRestClient(BCTenant, EnvironmentName);
+        IsInitialized := true;
     end;
 
     procedure Get(Endpoint: Text; var ResponseText: Text): Boolean

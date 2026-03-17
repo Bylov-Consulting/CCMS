@@ -21,7 +21,6 @@ codeunit 62033 D4PBCHttpClientHandler implements "Http Client Handler"
     var
         RequestMessage: HttpRequestMessage;
         ResponseMessage: HttpResponseMessage;
-        ResponseText: Text;
     begin
         RequestMessage := HttpRequestMessage.GetHttpRequestMessage();
         Success := CurrHttpClientInstance.Send(RequestMessage, ResponseMessage);

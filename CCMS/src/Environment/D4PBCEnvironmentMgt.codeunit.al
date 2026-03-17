@@ -830,23 +830,6 @@ codeunit 62000 "D4P BC Environment Mgt"
         BCEnvironment.Modify();
     end;
 
-    procedure RescheduleBCEnvironmentUpgrade(var BCTenant: Record "D4P BC Tenant"; EnvironmentName: Text[100]; TargetVersion: Text[100]; UpgradeDate: DateTime)
-    var
-        EnvironmentUpgradeScheduledMsg: Label 'Environment %1 successfully scheduled for upgrade to version %2 on Date %3.', Comment = '%1 = Environment Name, %2 = Version, %3 = Date';
-        FailedToUpgradeErr: Label 'Failed to upgrade environment: %1', Comment = '%1 = Error message';
-        Endpoint: Text;
-        ResponseText: Text;
-        Dummy: JsonObject;
-    begin
-        // Call Admin API to reschedule environment upgrade
-        Endpoint := '/applications/businesscentral/environments/' + EnvironmentName + '/updates';
-        AdminAPIClient.SetTenant(BCTenant);
-        if AdminAPIClient.Put(Endpoint, Dummy, ResponseText) then
-            Message(EnvironmentUpgradeScheduledMsg, EnvironmentName, TargetVersion, UpgradeDate)
-        else
-            Error(FailedToUpgradeErr, ResponseText);
-    end;
-
     procedure SetApplicationInsightsConnectionString(var BCEnvironment: Record "D4P BC Environment")
     var
         BCTenant: Record "D4P BC Tenant";

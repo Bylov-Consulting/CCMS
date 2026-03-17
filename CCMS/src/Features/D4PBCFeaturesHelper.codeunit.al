@@ -29,8 +29,7 @@ codeunit 62014 "D4P BC Features Helper"
             Error(TenantNotFoundErr);
 
         // Get companies first
-        AutomationAPIClient.SetEnvironment(BCEnvironment);
-        AutomationAPIClient.SetTenant(BCTenant);
+        AutomationAPIClient.SetContext(BCTenant, BCEnvironment);
         if not AutomationAPIClient.Get('/api/microsoft/automation/v2.0/companies', ResponseJson) then
             Error(APIRequestFailedErr, Format(ResponseJson));
 
@@ -71,8 +70,7 @@ codeunit 62014 "D4P BC Features Helper"
         // Build features endpoint
         Endpoint := StrSubstNo('/api/microsoft/automation/v2.0/companies(%1)/features', CompanyId);
 
-        AutomationAPIClient.SetEnvironment(BCEnvironment);
-        AutomationAPIClient.SetTenant(BCTenant);
+        AutomationAPIClient.SetContext(BCTenant, BCEnvironment);
         if not AutomationAPIClient.Get(Endpoint, ResponseJson) then
             Error(FeaturesAPIFailedErr, Format(ResponseJson));
 
@@ -225,8 +223,7 @@ codeunit 62014 "D4P BC Features Helper"
             Format(StartDateTime, 0, 9));
 
         // Make POST request
-        AutomationAPIClient.SetEnvironment(BCEnvironment);
-        AutomationAPIClient.SetTenant(BCTenant);
+        AutomationAPIClient.SetContext(BCTenant, BCEnvironment);
         if not AutomationAPIClient.Post(Endpoint, RequestBody, ResponseText) then
             Error(FailedToActivateErr, ResponseText);
 
@@ -267,8 +264,7 @@ codeunit 62014 "D4P BC Features Helper"
             Feature."Feature Key");
 
         // Make POST request
-        AutomationAPIClient.SetEnvironment(BCEnvironment);
-        AutomationAPIClient.SetTenant(BCTenant);
+        AutomationAPIClient.SetContext(BCTenant, BCEnvironment);
         if not AutomationAPIClient.Post(Endpoint, '', ResponseText) then
             Error(FailedToDeactivateErr, ResponseText);
 
@@ -279,7 +275,7 @@ codeunit 62014 "D4P BC Features Helper"
     local procedure GetFirstCompanyId(BCTenant: Record "D4P BC Tenant"; BCEnvironment: Record "D4P BC Environment"): Text
     var
         JArray: JsonArray;
-        JObject: JsonObject;
+        ResponseJson: JsonObject;
         JToken: JsonToken;
         CouldNotFindCompanyErr: Label 'Could not find company ID in response.';
         FailedToGetCompanyErr: Label 'Failed to get company ID. Error details: %1', Comment = '%1 = Error message';
@@ -287,15 +283,13 @@ codeunit 62014 "D4P BC Features Helper"
         NoCompaniesErr: Label 'No companies found in the environment.';
         NoValueArrayErr: Label 'No value array found in companies response.';
         CompanyId: Text;
-        ResponseJson: JsonObject;
     begin
         // Get companies
-        AutomationAPIClient.SetEnvironment(BCEnvironment);
-        AutomationAPIClient.SetTenant(BCTenant);
+        AutomationAPIClient.SetContext(BCTenant, BCEnvironment);
         if not AutomationAPIClient.Get('/api/microsoft/automation/v2.0/companies', ResponseJson) then
             Error(FailedToGetCompanyErr, Format(ResponseJson));
 
-        if not JObject.Get('value', JToken) then
+        if not ResponseJson.Get('value', JToken) then
             Error(NoValueArrayErr);
 
         JArray := JToken.AsArray();
@@ -304,8 +298,8 @@ codeunit 62014 "D4P BC Features Helper"
 
         // Get the first company ID
         JArray.Get(0, JToken);
-        JObject := JToken.AsObject();
-        if JObject.Get('id', JToken) then
+        ResponseJson := JToken.AsObject();
+        if ResponseJson.Get('id', JToken) then
             CompanyId := JToken.AsValue().AsText()
         else
             Error(CouldNotFindCompanyErr);

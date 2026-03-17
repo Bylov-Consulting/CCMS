@@ -79,7 +79,7 @@ page 62013 "D4P BC Environment Features"
             {
                 Caption = 'Activate Feature';
                 Image = Action;
-                ToolTip = 'Activate the selected feature.';
+                ToolTip = 'Activate the selected feature. Currently disabled due to potential issues with features requiring data upgrade';
                 Enabled = false;
 
                 trigger OnAction()
