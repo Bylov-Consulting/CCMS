@@ -217,16 +217,17 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
     // -----------------------------------------------------------------------
     //  Test 5 — OnBeforeApplyReschedule subscriber sets Skip=true for one env.
     //
-    //  OnBeforeApplyReschedule_SkipSandboxB (below) is a permanent event
-    //  subscriber in this codeunit. It only acts when the env name is 'SANDBOX-B'.
-    //  Only Test 5 creates that env, so there is no cross-test interference
-    //  even within the same codeunit run.
+    //  The subscriber lives in the separate D4P Skip Sandbox B Subscriber
+    //  codeunit (manual binding) because AL0501 forbids static event
+    //  subscribers in test codeunits. The test explicitly binds the
+    //  subscriber for the duration of the orchestrator calls.
     // -----------------------------------------------------------------------
     [Test]
     procedure BulkReschedule_SubscriberSkips_ApplyNotCalled()
     var
         BCEnv: Record "D4P BC Environment";
         TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        Subscriber: Codeunit "D4P Skip Sandbox B Subscriber";
         SelectCalls: List of [Text];
         CustNo: Code[20];
         ContainsSandboxB: Boolean;
@@ -247,6 +248,8 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
 
         Orchestrator.SetAdminAPI(MockAPI);
 
+        BindSubscription(Subscriber);
+
         BCEnv.SetRange("Customer No.", CustNo);
         Orchestrator.BuildPlan(BCEnv, TempPlan);
 
@@ -257,8 +260,10 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
                 TempPlan.Modify();
             until TempPlan.Next() = 0;
 
-        // Act — OnBeforeApplyReschedule_SkipSandboxB fires automatically
+        // Act — OnBeforeApplyReschedule fires via the bound subscriber
         Orchestrator.ApplyPlan(TempPlan);
+
+        UnbindSubscription(Subscriber);
 
         // Assert: SANDBOX-B is Skipped
         TempPlan.Reset();
@@ -278,15 +283,6 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
 
         Assert.AreEqual(2, SelectCalls.Count(),
             'Expected SelectTargetVersion called for the 2 non-skipped envs');
-    end;
-
-    // Event subscriber — permanently bound to this codeunit; skips env 'SANDBOX-B'.
-    // Non-local: the AL compiler rejects EventSubscriber on local procedures.
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"D4P BC Bulk Reschedule Mgt", 'OnBeforeApplyReschedule', '', false, false)]
-    procedure OnBeforeApplyReschedule_SkipSandboxB(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
-    begin
-        if PlanLine."Environment Name" = 'SANDBOX-B' then
-            Skip := true;
     end;
 
     // -----------------------------------------------------------------------
