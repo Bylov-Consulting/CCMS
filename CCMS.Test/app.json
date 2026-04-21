@@ -12,21 +12,27 @@
   "logo": "",
   "dependencies": [
     {
+      "id": "e33746ef-a796-46ca-8a1a-fb3840a42c48",
+      "version": "0.0.2.0",
+      "name": "Cloud Customer Management Solution",
+      "publisher": "Directions for partners"
+    },
+    {
       "id": "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
-      "version": "22.0.0.0",
+      "version": "27.0.0.0",
       "name": "Library Assert",
       "publisher": "Microsoft"
     },
     {
       "id": "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
-      "version": "22.0.0.0",
+      "version": "27.0.0.0",
       "name": "Any",
       "publisher": "Microsoft"
     }
   ],
   "screenshots": [],
   "platform": "1.0.0.0",
-  "application": "22.0.0.0",
+  "application": "27.0.0.0",
   "idRanges": [
     {
       "from": 62100,
