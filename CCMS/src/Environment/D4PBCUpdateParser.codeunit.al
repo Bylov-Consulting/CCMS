@@ -17,6 +17,8 @@ codeunit 62006 "D4P BC Update Parser"
         JsonToken: JsonToken;
         JsonTokenLoop: JsonToken;
         JsonValue: JsonValue;
+        ParsedDateTime: DateTime;
+        ParsedDate: Date;
         EntryNo: Integer;
     begin
         TempAvailableUpdate.Reset();
@@ -80,19 +82,24 @@ codeunit 62006 "D4P BC Update Parser"
                         TempAvailableUpdate."Selected DateTime" := JsonValue.AsDateTime().Date();
                 end;
 
-                // Latest selectable date — API quirk: either latestSelectableDateTime (DateTime)
-                // or legacy latestSelectableDate (date-only string). Both map to the same
-                // Date field. JsonValue.AsDateTime() parses an ISO-8601 date-only string as
-                // midnight-local (no timezone shift), which .Date() then collapses to a Date.
+                // Latest selectable date — API quirk: either latestSelectableDateTime (full ISO
+                // DateTime, new nested shape) or legacy latestSelectableDate (date-only string
+                // like "2026-06-01"). Both map to the same Date field, but require different
+                // parsing: NavDateTime rejects date-only strings, so AsDate() must be used for
+                // the legacy flat key while AsDateTime().Date() is used for the full ISO value.
                 if JsonScheduleDetails.Get('latestSelectableDateTime', JsonToken) then begin
                     JsonValue := JsonToken.AsValue();
-                    if not JsonValue.IsNull() then
-                        TempAvailableUpdate."Latest Selectable Date" := JsonValue.AsDateTime().Date();
+                    if not JsonValue.IsNull() then begin
+                        ParsedDateTime := JsonValue.AsDateTime();
+                        TempAvailableUpdate."Latest Selectable Date" := ParsedDateTime.Date();
+                    end;
                 end else
                     if JsonScheduleDetails.Get('latestSelectableDate', JsonToken) then begin
                         JsonValue := JsonToken.AsValue();
-                        if not JsonValue.IsNull() then
-                            TempAvailableUpdate."Latest Selectable Date" := JsonValue.AsDateTime().Date();
+                        if not JsonValue.IsNull() then begin
+                            ParsedDate := JsonValue.AsDate();
+                            TempAvailableUpdate."Latest Selectable Date" := ParsedDate;
+                        end;
                     end;
 
                 // ignoreUpdateWindow
