@@ -3,17 +3,16 @@ namespace D4P.CCMS.Environment;
 codeunit 62004 "D4P BC Bulk Reschedule Mgt"
 {
     var
+        // Per-env fetch result carried across the TryFunction boundary. AL's
+        // [TryFunction] semantics make it awkward to pass a var Record param to a
+        // function that also invokes an interface method, so we stage the result here.
+        TempFetchBuffer: Record "D4P BC Available Update" temporary;
         AdminAPI: Interface "D4P IBC Admin API";
         AdminAPIInjected: Boolean;
 
     /// <summary>
     /// Test seam: inject an implementation of "D4P IBC Admin API" (e.g. a mock).
-    /// MUST have a real body even during RED — otherwise tests cannot substitute the mock
-    /// and would end up calling the default implementation (live HTTP) or an unassigned
-    /// interface variable. Setting the injected flag lets EnsureAdminAPI (GREEN) decide
-    /// whether to fall back to the default codeunit.
     /// </summary>
-    /// <param name="NewAPI">The implementation to use for all subsequent Admin API calls.</param>
     procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
     begin
         AdminAPI := NewAPI;
@@ -21,44 +20,182 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     end;
 
     /// <summary>
-    /// Full flow: BuildPlan -> (user confirms via page 62032) -> ApplyPlan -> ShowSummary.
+    /// Full flow: empty-selection guard, BuildPlan -> ApplyPlan -> ShowSummary.
+    /// Page wiring for phase-2 dialog (62032) and summary (62033) is deferred to the
+    /// Pages/wiring step per solution plan §8 steps 9-10; for now RunBulkReschedule
+    /// calls BuildPlan then ApplyPlan directly so the orchestrator path remains exercisable.
     /// </summary>
-    /// <param name="BCEnvironment">Multi-selected environment records.</param>
     procedure RunBulkReschedule(var BCEnvironment: Record "D4P BC Environment")
+    var
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        NoSelectionErr: Label 'Select one or more environments before bulk rescheduling.';
     begin
-        // RED stub: intentionally empty.
+        EnsureAdminAPI();
+
+        if BCEnvironment.IsEmpty() then
+            Error(NoSelectionErr);
+
+        BuildPlan(BCEnvironment, TempPlan);
+
+        // Page 62032 modal is deferred — see plan §8 step 9.
+        ApplyPlan(TempPlan);
+
+        // Page 62033 summary is deferred — see plan §8 step 10.
+        ShowSummary(TempPlan);
     end;
 
     /// <summary>
-    /// Iterates BCEnvironment, populates TempPlan. Catches per-env fetch failures
-    /// and marks rows Skipped with a reason. Opens phase-1 progress dialog.
-    /// RED stub: MUST return silently leaving TempPlan empty so tests can observe
-    /// "no rows inserted" as an AssertError, not a runtime Error.
+    /// Iterates BCEnvironment, populates TempPlan. Per-env fetch failures are caught
+    /// via a TryFunction and recorded as Skipped rows (not propagated). Envs with an
+    /// empty update list are also marked Skipped with a descriptive reason.
     /// </summary>
     procedure BuildPlan(var BCEnvironment: Record "D4P BC Environment"; var TempPlan: Record "D4P BC Reschedule Plan Line" temporary)
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TargetVersion: Text[100];
+        DefaultDate: Date;
+        ExpectedMonth: Integer;
+        ExpectedYear: Integer;
+        EntryNo: Integer;
+        AvailableFlag: Boolean;
+        FetchReason: Text;
+        FetchFailedLbl: Label 'Fetch failed: %1', Comment = '%1 = Error message from GetLastErrorText';
+        UnknownErrorLbl: Label 'unknown error';
+        NoUpdatesLbl: Label 'No updates available';
     begin
-        // RED stub: intentionally empty. DO NOT Error() here.
+        EnsureAdminAPI();
+
+        TempPlan.Reset();
+        TempPlan.DeleteAll(false);
+
+        if not BCEnvironment.FindSet() then
+            exit;
+
+        EntryNo := 0;
+        repeat
+            EntryNo += 1;
+
+            TempPlan.Init();
+            TempPlan."Entry No." := EntryNo;
+            TempPlan."Customer No." := BCEnvironment."Customer No.";
+            TempPlan."Tenant ID" := BCEnvironment."Tenant ID";
+            TempPlan."Environment Name" := CopyStr(BCEnvironment.Name, 1, MaxStrLen(TempPlan."Environment Name"));
+            TempPlan."Application Family" := BCEnvironment."Application Family";
+            TempPlan."Current Version" := BCEnvironment."Current Version";
+            TempPlan.Result := TempPlan.Result::Pending;
+
+            ClearFetchBuffer();
+            if not TryFetchUpdates(BCEnvironment) then begin
+                FetchReason := GetLastErrorText();
+                if FetchReason = '' then
+                    FetchReason := UnknownErrorLbl;
+                TempPlan.Result := TempPlan.Result::Skipped;
+                TempPlan.Reason := CopyStr(StrSubstNo(FetchFailedLbl, FetchReason), 1, MaxStrLen(TempPlan.Reason));
+            end else
+                if TempFetchBuffer.IsEmpty() then begin
+                    TempPlan.Result := TempPlan.Result::Skipped;
+                    TempPlan.Reason := CopyStr(NoUpdatesLbl, 1, MaxStrLen(TempPlan.Reason));
+                end else begin
+                    // Pick a default target version from the fetched candidates.
+                    TargetVersion := '';
+                    DefaultDate := 0D;
+                    ExpectedMonth := 0;
+                    ExpectedYear := 0;
+                    Parser.PickDefaultTargetVersion(TempFetchBuffer, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
+
+                    TempPlan."Target Version" := TargetVersion;
+                    TempPlan."Selected Date" := DefaultDate;
+                    TempPlan."Latest Selectable Date" := DefaultDate;
+                    TempPlan."Expected Month" := ExpectedMonth;
+                    TempPlan."Expected Year" := ExpectedYear;
+
+                    // "Available" flips to true if we picked an available candidate (i.e. a Date was set).
+                    AvailableFlag := DefaultDate <> 0D;
+                    TempPlan.Available := AvailableFlag;
+                end;
+
+            TempPlan.Insert(false);
+        until BCEnvironment.Next() = 0;
     end;
 
     /// <summary>
-    /// Iterates TempPlan rows where Result = Pending. TryApply per row, mutates Result.
-    /// Commit() after each apply. Publishes the 2 events. Opens phase-2 progress dialog.
+    /// Iterates TempPlan rows where Result = Pending. For each:
+    ///  - Publishes OnBeforeApplyReschedule with Skip byref.
+    ///  - If Skip=true: marks Skipped with 'Skipped by subscriber', continues.
+    ///  - Else calls TryApply which invokes AdminAPI.SelectTargetVersion.
+    ///  - On success marks Succeeded; on failure marks Failed with GetLastErrorText reason.
+    ///  - Commit() after each apply for skip-and-continue durability across mid-run
+    ///    hard failures (mirrors the plan's documented skip-and-continue contract).
+    ///  - Publishes OnAfterApplyReschedule regardless of outcome.
     /// </summary>
     procedure ApplyPlan(var TempPlan: Record "D4P BC Reschedule Plan Line" temporary)
+    var
+        BCEnv: Record "D4P BC Environment";
+        Skip: Boolean;
+        ApplyReason: Text;
+        SkippedBySubscriberLbl: Label 'Skipped by subscriber';
+        UnknownErrorLbl: Label 'unknown error';
     begin
-        // RED stub: intentionally empty.
+        EnsureAdminAPI();
+
+        TempPlan.Reset();
+        TempPlan.SetRange(Result, TempPlan.Result::Pending);
+        if not TempPlan.FindSet() then begin
+            TempPlan.Reset();
+            exit;
+        end;
+
+        repeat
+            Skip := false;
+            OnBeforeApplyReschedule(TempPlan, Skip);
+
+            if Skip then begin
+                TempPlan.Result := TempPlan.Result::Skipped;
+                TempPlan.Reason := CopyStr(SkippedBySubscriberLbl, 1, MaxStrLen(TempPlan.Reason));
+                TempPlan.Modify(false);
+                // Commit() — partial progress must be durable per skip-and-continue contract.
+                Commit();
+                OnAfterApplyReschedule(TempPlan);
+            end else begin
+                // Re-fetch the environment record so SelectTargetVersion can Modify it.
+                // If Get() fails (e.g. env was deleted mid-run) BCEnv is cleared and
+                // the interface's own BCTenant.Get() will fail inside TryApply.
+                if BCEnv.Get(TempPlan."Customer No.", TempPlan."Tenant ID", TempPlan."Environment Name") then;
+
+                if TryApply(TempPlan, BCEnv) then begin
+                    TempPlan.Result := TempPlan.Result::Succeeded;
+                    TempPlan.Reason := '';
+                end else begin
+                    ApplyReason := GetLastErrorText();
+                    if ApplyReason = '' then
+                        ApplyReason := UnknownErrorLbl;
+                    TempPlan.Result := TempPlan.Result::Failed;
+                    TempPlan.Reason := CopyStr(ApplyReason, 1, MaxStrLen(TempPlan.Reason));
+                end;
+                TempPlan.Modify(false);
+                // Commit() — partial progress must be durable per skip-and-continue contract.
+                Commit();
+                OnAfterApplyReschedule(TempPlan);
+            end;
+        until TempPlan.Next() = 0;
+
+        TempPlan.Reset();
     end;
 
     /// <summary>
-    /// Runs page 62033 (Bulk Reschedule Summary) modally against TempPlan.
+    /// Runs the summary page for TempPlan. Deferred to the Pages/wiring step; this
+    /// body is deliberately empty during GREEN so tests that call RunBulkReschedule
+    /// do not open a UI.
     /// </summary>
     procedure ShowSummary(var TempPlan: Record "D4P BC Reschedule Plan Line" temporary)
     begin
-        // RED stub: intentionally empty.
+        // Intentionally empty — page 62033 Bulk Reschedule Summary is created in the
+        // Pages/wiring phase (plan §8 step 10). Leaving this no-op keeps the orchestrator
+        // callable end-to-end today.
     end;
 
     /// <summary>
-    /// Publishes before each apply. Subscribers set Skip:=true to veto an individual env.
+    /// Publishes before each apply. Subscribers set Skip := true to veto an individual env.
     /// </summary>
     [IntegrationEvent(false, false)]
     local procedure OnBeforeApplyReschedule(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
@@ -73,9 +210,55 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     begin
     end;
 
+    /// <summary>
+    /// [TryFunction] wrapper around AdminAPI.SelectTargetVersion. Converts a false return
+    /// into an Error so the orchestrator sees a uniform success/failure signal via the
+    /// TryFunction result and GetLastErrorText().
+    /// </summary>
     [TryFunction]
-    local procedure TryApply(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary)
+    local procedure TryApply(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var BCEnv: Record "D4P BC Environment")
+    var
+        APIFailureErr: Label 'Admin API reported the reschedule request failed.';
+        Success: Boolean;
     begin
-        // RED stub: intentionally empty.
+        Success := AdminAPI.SelectTargetVersion(
+            BCEnv,
+            PlanLine."Target Version",
+            PlanLine."Selected Date",
+            PlanLine."Expected Month",
+            PlanLine."Expected Year");
+        if not Success then
+            Error(APIFailureErr);
+    end;
+
+    /// <summary>
+    /// [TryFunction] wrapper around AdminAPI.GetAvailableUpdates. Stages the result
+    /// in TempFetchBuffer because AL forbids passing a var Record param into a TryFunction's
+    /// own var param together with an interface invocation.
+    /// </summary>
+    [TryFunction]
+    local procedure TryFetchUpdates(var BCEnvironment: Record "D4P BC Environment")
+    begin
+        AdminAPI.GetAvailableUpdates(BCEnvironment, TempFetchBuffer);
+    end;
+
+    local procedure ClearFetchBuffer()
+    begin
+        TempFetchBuffer.Reset();
+        TempFetchBuffer.DeleteAll(false);
+    end;
+
+    /// <summary>
+    /// If no mock/impl was injected, bind AdminAPI to the default D4P BC Admin API codeunit.
+    /// </summary>
+    local procedure EnsureAdminAPI()
+    var
+        DefaultImpl: Codeunit "D4P BC Admin API";
+    begin
+        if AdminAPIInjected then
+            exit;
+
+        AdminAPI := DefaultImpl;
+        AdminAPIInjected := true;
     end;
 }
