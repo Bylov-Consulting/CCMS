@@ -37,6 +37,7 @@ permissionset 62001 "D4P BC ADMIN READ"
         tabledata "D4P AppInsights Connection" = R,
         tabledata "D4P PTE Object Range" = R,
         tabledata "D4P BC Environment Operation" = R,
+        tabledata "D4P BC Reschedule Plan Line" = R,
 
         // Table Objects
         table "D4P BC Customer" = X,
@@ -57,6 +58,7 @@ permissionset 62001 "D4P BC ADMIN READ"
         table "D4P AppInsights Connection" = X,
         table "D4P PTE Object Range" = X,
         table "D4P BC Environment Operation" = X,
+        table "D4P BC Reschedule Plan Line" = X,
 
         // Pages - List and Card pages for viewing
         page "D4P BC Customers List" = X,
@@ -85,6 +87,8 @@ permissionset 62001 "D4P BC ADMIN READ"
         page "D4P BC Customer FactBox" = X,
         page "D4P BC Admin Headline" = X,
         page "D4P BC Capacity List" = X,
+        page "D4P Bulk Reschedule Dialog" = X,
+        page "D4P Bulk Reschedule Summary" = X,
 
         // Codeunit for reading data
         codeunit "D4P BC Environment Mgt" = X,
@@ -93,6 +97,9 @@ permissionset 62001 "D4P BC ADMIN READ"
         codeunit "D4P KQL Query Store Init" = X,
         codeunit "D4P Telemetry Helper" = X,
         codeunit "D4P BC Operations Helper" = X,
+        codeunit "D4P BC Admin API" = X,
+        codeunit "D4P BC Bulk Reschedule Mgt" = X,
+        codeunit "D4P BC Update Parser" = X,
 
         // Reports - needed for telemetry queries
         report "D4P Load Data" = X,
