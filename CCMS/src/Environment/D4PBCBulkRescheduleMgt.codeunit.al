@@ -20,27 +20,57 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     end;
 
     /// <summary>
-    /// Full flow: empty-selection guard, BuildPlan -> ApplyPlan -> ShowSummary.
-    /// Page wiring for phase-2 dialog (62032) and summary (62033) is deferred to the
-    /// Pages/wiring step per solution plan §8 steps 9-10; for now RunBulkReschedule
-    /// calls BuildPlan then ApplyPlan directly so the orchestrator path remains exercisable.
+    /// Full flow: empty-selection guard, Confirm, BuildPlan -> user review via page 62032 ->
+    /// ApplyPlan -> ShowSummary (page 62033).
     /// </summary>
     procedure RunBulkReschedule(var BCEnvironment: Record "D4P BC Environment")
     var
         TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        TempPendingCheck: Record "D4P BC Reschedule Plan Line" temporary;
+        BulkDialog: Page "D4P Bulk Reschedule Dialog";
+        FetchDialog: Dialog;
+        EnvCount: Integer;
         NoSelectionErr: Label 'Select one or more environments before bulk rescheduling.';
+        ConfirmMsg: Label 'Reschedule updates for %1 environment(s)?', Comment = '%1 = Number of environments';
+        FetchingMsg: Label 'Fetching available updates for the selected environments...';
+        NothingToRescheduleMsg: Label 'Nothing to reschedule — none of the selected environments has an update available.';
     begin
         EnsureAdminAPI();
 
         if BCEnvironment.IsEmpty() then
             Error(NoSelectionErr);
 
-        BuildPlan(BCEnvironment, TempPlan);
+        EnvCount := BCEnvironment.Count();
+        if not Confirm(ConfirmMsg, false, EnvCount) then
+            exit;
 
-        // Page 62032 modal is deferred — see plan §8 step 9.
+        // BuildPlan itself does no UI — a single indeterminate progress dialog is adequate
+        // because phase-1 is typically sub-second-per-env and partners have already confirmed.
+        // Per-env progress would require threading the dialog through BuildPlan's signature,
+        // which the test-engineer intentionally kept clean.
+        FetchDialog.Open(FetchingMsg);
+        BuildPlan(BCEnvironment, TempPlan);
+        FetchDialog.Close();
+
+        // If every row ended up Skipped (no available updates / all fetches failed) there's
+        // nothing the user can act on, so short-circuit instead of opening a dead dialog.
+        TempPendingCheck.Copy(TempPlan, true);
+        TempPendingCheck.Reset();
+        TempPendingCheck.SetRange(Result, TempPendingCheck.Result::Pending);
+        if TempPendingCheck.IsEmpty() then begin
+            Message(NothingToRescheduleMsg);
+            exit;
+        end;
+
+        BulkDialog.SetData(TempPlan);
+        BulkDialog.RunModal();
+        if not BulkDialog.WasAccepted() then
+            exit;
+
+        BulkDialog.GetData(TempPlan);
+
         ApplyPlan(TempPlan);
 
-        // Page 62033 summary is deferred — see plan §8 step 10.
         ShowSummary(TempPlan);
     end;
 
@@ -183,15 +213,19 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     end;
 
     /// <summary>
-    /// Runs the summary page for TempPlan. Deferred to the Pages/wiring step; this
-    /// body is deliberately empty during GREEN so tests that call RunBulkReschedule
-    /// do not open a UI.
+    /// Runs the summary page for TempPlan. The summary page receives a fresh orchestrator
+    /// instance for its Retry Failed action; ApplyPlan calls EnsureAdminAPI() on every
+    /// invocation, so a fresh instance re-binds the default Admin API correctly. AL has
+    /// no "self" reference for codeunits, hence the local instance.
     /// </summary>
     procedure ShowSummary(var TempPlan: Record "D4P BC Reschedule Plan Line" temporary)
+    var
+        RetryOrchestrator: Codeunit "D4P BC Bulk Reschedule Mgt";
+        SummaryPage: Page "D4P Bulk Reschedule Summary";
     begin
-        // Intentionally empty — page 62033 Bulk Reschedule Summary is created in the
-        // Pages/wiring phase (plan §8 step 10). Leaving this no-op keeps the orchestrator
-        // callable end-to-end today.
+        SummaryPage.SetData(TempPlan);
+        SummaryPage.SetOrchestrator(RetryOrchestrator);
+        SummaryPage.RunModal();
     end;
 
     /// <summary>
