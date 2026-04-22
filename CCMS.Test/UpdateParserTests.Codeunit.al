@@ -250,6 +250,129 @@ codeunit 62102 "D4P Update Parser Tests"
             'DefaultDate must correspond to the winning version 28.10');
     end;
 
+    // -------------------------------------------------------------------------
+    // U1 — Mixed available + unreleased entries in a single JSON value array
+    //
+    // Verifies that the parser correctly handles a realistic API response that
+    // contains both a released (available=true, scheduleDetails) entry and an
+    // unreleased (available=false, expectedAvailability) entry side by side.
+    // Each entry must land in its own temp table row with the correct field set:
+    //  - The available row has a Latest Selectable Date and no Expected Month/Year.
+    //  - The unreleased row has Expected Month/Year and no Latest Selectable Date.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure Parser_MixedAvailableAndUnreleased_InSingleResponse()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        Json: Text;
+    begin
+        // Arrange — two entries in the value array:
+        //   Entry 1: targetVersion "27.9", available=true,
+        //            scheduleDetails.latestSelectableDateTime = "2026-06-01T00:00:00Z"
+        //   Entry 2: targetVersion "27.10", available=false,
+        //            expectedAvailability.expectedReleaseMonth=8, expectedReleaseYear=2026
+        Json := '{"value":[' +
+                  '{' +
+                    '"targetVersion":"27.9",' +
+                    '"available":true,' +
+                    '"scheduleDetails":{' +
+                      '"latestSelectableDateTime":"2026-06-01T00:00:00Z"' +
+                    '}' +
+                  '},' +
+                  '{' +
+                    '"targetVersion":"27.10",' +
+                    '"available":false,' +
+                    '"expectedAvailability":{' +
+                      '"month":8,' +
+                      '"year":2026' +
+                    '}' +
+                  '}' +
+                ']}';
+
+        // Act
+        Parser.ParseUpdatesJson(Json, TempAvailableUpdate);
+
+        // Assert — count
+        Assert.AreEqual(2, TempAvailableUpdate.Count(),
+            'Parser must insert exactly 2 rows for a two-entry value array');
+
+        // Assert — "27.9" row: available=true, LatestSelectableDate set, Month/Year zero
+        TempAvailableUpdate.Reset();
+        TempAvailableUpdate.SetRange("Target Version", '27.9');
+        Assert.IsTrue(TempAvailableUpdate.FindFirst(), 'Expected a row with Target Version = 27.9');
+        Assert.AreEqual(true, TempAvailableUpdate.Available,
+            '27.9 row: Available must be true');
+        Assert.AreEqual(DMY2Date(1, 6, 2026), TempAvailableUpdate."Latest Selectable Date",
+            '27.9 row: Latest Selectable Date must be 2026-06-01');
+        Assert.AreEqual(0, TempAvailableUpdate."Expected Month",
+            '27.9 row: Expected Month must be 0 (no expectedAvailability node present)');
+        Assert.AreEqual(0, TempAvailableUpdate."Expected Year",
+            '27.9 row: Expected Year must be 0 (no expectedAvailability node present)');
+
+        // Assert — "27.10" row: available=false, LatestSelectableDate = 0D, Month/Year set
+        TempAvailableUpdate.Reset();
+        TempAvailableUpdate.SetRange("Target Version", '27.10');
+        Assert.IsTrue(TempAvailableUpdate.FindFirst(), 'Expected a row with Target Version = 27.10');
+        Assert.AreEqual(false, TempAvailableUpdate.Available,
+            '27.10 row: Available must be false');
+        Assert.AreEqual(0D, TempAvailableUpdate."Latest Selectable Date",
+            '27.10 row: Latest Selectable Date must be 0D (no scheduleDetails node present)');
+        Assert.AreEqual(8, TempAvailableUpdate."Expected Month",
+            '27.10 row: Expected Month must be 8');
+        Assert.AreEqual(2026, TempAvailableUpdate."Expected Year",
+            '27.10 row: Expected Year must be 2026');
+    end;
+
+    // -------------------------------------------------------------------------
+    // U2 — Malformed JSON input: parser must swallow the error and return empty
+    //
+    // JsonObject.ReadFrom() returns false on malformed input; the parser must
+    // exit cleanly without propagating any error to the caller.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure Parser_MalformedJson_ReturnsEmpty()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        Json: Text;
+    begin
+        // Arrange — deliberately malformed: not valid JSON
+        Json := '{bad json here -- this is not parseable';
+
+        // Act — must NOT raise any error; the parser's ReadFrom guard catches this
+        Parser.ParseUpdatesJson(Json, TempAvailableUpdate);
+
+        // Assert — no rows produced, no error propagated
+        Assert.IsTrue(TempAvailableUpdate.IsEmpty(),
+            'Parser must return an empty result for malformed JSON input without raising an error');
+    end;
+
+    // -------------------------------------------------------------------------
+    // U3 — Valid JSON but without a "value" key: parser must return empty
+    //
+    // The Admin API occasionally returns error envelopes (e.g. 401 Unauthorized)
+    // as JSON objects that have no "value" array. The parser must handle this
+    // gracefully — JsonObject.Get('value', ...) returns false, parser exits.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure Parser_ResponseMissingValueKey_ReturnsEmpty()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        Json: Text;
+    begin
+        // Arrange — valid JSON structure but no "value" key at the root
+        Json := '{"error":{"message":"Unauthorized","code":401}}';
+
+        // Act — must NOT raise any error; the Get('value') guard causes an early exit
+        Parser.ParseUpdatesJson(Json, TempAvailableUpdate);
+
+        // Assert — no rows produced, no error propagated
+        Assert.IsTrue(TempAvailableUpdate.IsEmpty(),
+            'Parser must return an empty result when the JSON response has no "value" key');
+    end;
+
     var
         Assert: Codeunit "Library Assert";
 }

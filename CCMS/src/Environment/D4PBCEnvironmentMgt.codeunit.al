@@ -403,7 +403,11 @@ codeunit 62000 "D4P BC Environment Mgt"
                                 year := JsonValue.AsInteger();
                             end;
 
-                            expectedAvailability := Format(year) + '/' + PadStr('', 2 - StrLen(Format(month)), '0') + Format(month);
+                            // Guard against PadStr negative-length runtime errors (month outside
+                            // 1..12) and against meaningless output (year = 0). If inputs are
+                            // invalid, leave expectedAvailability as the empty default.
+                            if (month in [1 .. 12]) and (year > 0) then
+                                expectedAvailability := Format(year) + '/' + PadStr('', 2 - StrLen(Format(month)), '0') + Format(month);
                         end;
                     end;
                 end;

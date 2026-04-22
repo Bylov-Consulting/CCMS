@@ -171,12 +171,18 @@ page 62033 "D4P Bulk Reschedule Summary"
     end;
 
     /// <summary>
-    /// Forward the caller's Admin API interface so Retry Failed uses the same seam
-    /// (including any injected mock). AL's codeunit-by-value semantics mean the
-    /// orchestrator we were given via SetOrchestrator is a COPY — we therefore store
-    /// the interface and re-apply it to that copy just before ApplyPlan so the copy's
-    /// AdminAPI matches the caller's.
+    /// Test seam: injects a custom API implementation. Intended for CCMS.Test only.
+    /// In production, the default <see cref="Codeunit::D4P BC Admin API"/> is used
+    /// automatically via <c>EnsureAdminAPI</c>. Calling this from a non-test context
+    /// is supported but semantically risky — a non-authenticating or mis-routed
+    /// implementation would be used for every subsequent API call in this session.
     /// </summary>
+    /// <param name="NewAPI">The implementation to use for all subsequent API calls.</param>
+    /// <remarks>
+    /// AL's codeunit-by-value semantics mean the orchestrator we were given via
+    /// SetOrchestrator is a COPY — we therefore store the interface and re-apply it to
+    /// that copy just before ApplyPlan so the copy's AdminAPI matches the caller's.
+    /// </remarks>
     procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
     begin
         AdminAPI := NewAPI;
@@ -192,7 +198,9 @@ page 62033 "D4P Bulk Reschedule Summary"
 
         Rec.Reset();
         Rec.SetRange(Result, Rec.Result::Failed);
-        if not Rec.FindSet(true) then begin
+        // Rec is a temporary SourceTable — the update-lock hint on FindSet is ignored
+        // for temp tables and only serves to mislead readers, so drop it.
+        if not Rec.FindSet() then begin
             Rec.Reset();
             Message(NothingToRetryMsg);
             exit;
@@ -265,14 +273,24 @@ page 62033 "D4P Bulk Reschedule Summary"
         SkippedCount: Integer;
         FailedCount: Integer;
     begin
+        // Single-pass counter: previously three SetRange + Count() passes walked the
+        // temp table three times. One FindSet + case is both cheaper and easier to read.
+        // NOTE: no else branch — Result is Extensible, so Pending (or any future
+        // partner-added value) must fall through silently. Counting them in one of the
+        // three buckets would be wrong.
         TempCountFilter.Copy(Rec, true);
         TempCountFilter.Reset();
-        TempCountFilter.SetRange(Result, TempCountFilter.Result::Succeeded);
-        SucceededCount := TempCountFilter.Count();
-        TempCountFilter.SetRange(Result, TempCountFilter.Result::Skipped);
-        SkippedCount := TempCountFilter.Count();
-        TempCountFilter.SetRange(Result, TempCountFilter.Result::Failed);
-        FailedCount := TempCountFilter.Count();
+        if TempCountFilter.FindSet() then
+            repeat
+                case TempCountFilter.Result of
+                    TempCountFilter.Result::Succeeded:
+                        SucceededCount += 1;
+                    TempCountFilter.Result::Skipped:
+                        SkippedCount += 1;
+                    TempCountFilter.Result::Failed:
+                        FailedCount += 1;
+                end;
+            until TempCountFilter.Next() = 0;
 
         CurrPage.Caption := StrSubstNo(CaptionLbl, SucceededCount, SkippedCount, FailedCount);
     end;

@@ -8,7 +8,12 @@ interface "D4P IBC Admin API"
     /// </summary>
     /// <param name="BCEnvironment">The environment to fetch updates for.</param>
     /// <param name="TempAvailableUpdate">Temporary record populated with the available updates.</param>
-    procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary);
+    /// <param name="RawResponse">Out: the raw JSON payload returned by the API, so callers can
+    /// cache it and avoid re-fetching for the same env (e.g. dialog AssistEdit drilldown).
+    /// Implementations that synthesize data (mocks) may populate this with any representation
+    /// of the fixture that could be re-parsed, or leave it empty — callers fall back to a
+    /// re-fetch on cache miss.</param>
+    procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary; var RawResponse: Text);
 
     /// <summary>
     /// Apply a selected target version and date to one environment.

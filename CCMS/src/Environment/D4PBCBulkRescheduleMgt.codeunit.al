@@ -7,12 +7,26 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         // [TryFunction] semantics make it awkward to pass a var Record param to a
         // function that also invokes an interface method, so we stage the result here.
         TempFetchBuffer: Record "D4P BC Available Update" temporary;
+        // Companion to TempFetchBuffer: the raw JSON payload for the most recent fetch,
+        // staged across the TryFunction boundary so BuildPlan can push it into the per-env
+        // cache consumed by the dialog's AssistEdit drilldown.
+        TempFetchRawResponse: Text;
+        // Per-env raw JSON cache populated during BuildPlan and forwarded to the dialog so
+        // AssistEdit drilldowns can re-parse without a second API round-trip.
+        FetchCache: Dictionary of [Text, Text];
         AdminAPI: Interface "D4P IBC Admin API";
         AdminAPIInjected: Boolean;
+        UnknownErrorLbl: Label 'unknown error';
+        EnvGoneErr: Label 'Environment %1 no longer exists in the local database.', Comment = '%1 = Environment Name';
 
     /// <summary>
-    /// Test seam: inject an implementation of "D4P IBC Admin API" (e.g. a mock).
+    /// Test seam: injects a custom API implementation. Intended for CCMS.Test only.
+    /// In production, the default <see cref="Codeunit::D4P BC Admin API"/> is used
+    /// automatically via <c>EnsureAdminAPI</c>. Calling this from a non-test context
+    /// is supported but semantically risky — a non-authenticating or mis-routed
+    /// implementation would be used for every subsequent API call in this session.
     /// </summary>
+    /// <param name="NewAPI">The implementation to use for all subsequent API calls.</param>
     procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
     begin
         AdminAPI := NewAPI;
@@ -29,6 +43,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         TempPendingCheck: Record "D4P BC Reschedule Plan Line" temporary;
         BulkDialog: Page "D4P Bulk Reschedule Dialog";
         FetchDialog: Dialog;
+        DialogFetchCache: Dictionary of [Text, Text];
         EnvCount: Integer;
         NoSelectionErr: Label 'Select one or more environments before bulk rescheduling.';
         ConfirmMsg: Label 'Reschedule updates for %1 environment(s)?', Comment = '%1 = Number of environments';
@@ -66,6 +81,10 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         // Forward the orchestrator's (potentially mocked) interface into the dialog so the
         // AssistEdit drilldown uses the same seam — no more bypass via `new Codeunit`.
         BulkDialog.SetAdminAPI(AdminAPI);
+        // Warm the dialog's per-env cache with the raw JSONs BuildPlan already fetched —
+        // turns a click-on-AssistEdit from a second API round-trip into a dictionary lookup.
+        GetFetchCache(DialogFetchCache);
+        BulkDialog.SetFetchCache(DialogFetchCache);
         BulkDialog.RunModal();
         if not BulkDialog.WasAccepted() then
             exit;
@@ -93,13 +112,17 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         AvailableFlag: Boolean;
         FetchReason: Text;
         FetchFailedLbl: Label 'Fetch failed: %1', Comment = '%1 = Error message from GetLastErrorText';
-        UnknownErrorLbl: Label 'unknown error';
         NoUpdatesLbl: Label 'No updates available';
     begin
         EnsureAdminAPI();
 
         TempPlan.Reset();
         TempPlan.DeleteAll(false);
+
+        // Reset the per-env raw-JSON cache at the start of every BuildPlan run. Without
+        // this, a second BuildPlan on the same orchestrator instance would serve stale
+        // fixture data into AssistEdit drilldowns for the previous invocation's envs.
+        Clear(FetchCache);
 
         if not BCEnvironment.FindSet() then
             exit;
@@ -124,7 +147,12 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                     FetchReason := UnknownErrorLbl;
                 TempPlan.Result := TempPlan.Result::Skipped;
                 TempPlan.Reason := CopyStr(StrSubstNo(FetchFailedLbl, FetchReason), 1, MaxStrLen(TempPlan.Reason));
-            end else
+            end else begin
+                // Cache the raw JSON under the env name so AssistEdit drilldowns can re-parse
+                // without another API hit. Populated regardless of whether the fetch returned
+                // rows — a legitimate empty payload is still a valid cache hit.
+                CacheRawResponse(BCEnvironment.Name, TempFetchRawResponse);
+
                 if TempFetchBuffer.IsEmpty() then begin
                     TempPlan.Result := TempPlan.Result::Skipped;
                     TempPlan.Reason := CopyStr(NoUpdatesLbl, 1, MaxStrLen(TempPlan.Reason));
@@ -146,6 +174,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                     AvailableFlag := DefaultDate <> 0D;
                     TempPlan.Available := AvailableFlag;
                 end;
+            end;
 
             TempPlan.Insert(false);
         until BCEnvironment.Next() = 0;
@@ -167,7 +196,6 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         Skip: Boolean;
         ApplyReason: Text;
         SkippedBySubscriberLbl: Label 'Skipped by subscriber';
-        UnknownErrorLbl: Label 'unknown error';
     begin
         EnsureAdminAPI();
 
@@ -191,24 +219,39 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                 OnAfterApplyReschedule(TempPlan);
             end else begin
                 // Re-fetch the environment record so SelectTargetVersion can Modify it.
-                // If Get() fails (e.g. env was deleted mid-run) BCEnv is cleared and
-                // the interface's own BCTenant.Get() will fail inside TryApply.
-                if BCEnv.Get(TempPlan."Customer No.", TempPlan."Tenant ID", TempPlan."Environment Name") then;
-
-                if TryApply(TempPlan, BCEnv) then begin
-                    TempPlan.Result := TempPlan.Result::Succeeded;
-                    TempPlan.Reason := '';
-                end else begin
-                    ApplyReason := GetLastErrorText();
-                    if ApplyReason = '' then
-                        ApplyReason := UnknownErrorLbl;
+                // SetLoadFields constrains reads AND the set available for a subsequent
+                // Modify — include every field SelectTargetVersion touches (read or write):
+                //   Reads: "Customer No.", "Tenant ID", "Application Family", Name
+                //   Writes: "Target Version", "Selected DateTime", "Expected Availability"
+                BCEnv.SetLoadFields(
+                    "Customer No.", "Tenant ID", "Application Family", Name,
+                    "Target Version", "Selected DateTime", "Expected Availability");
+                if not BCEnv.Get(TempPlan."Customer No.", TempPlan."Tenant ID", TempPlan."Environment Name") then begin
+                    // Environment was deleted between BuildPlan and ApplyPlan (or from the UI
+                    // mid-run). Emit an explicit, actionable reason instead of silently falling
+                    // through to an opaque downstream "BCTenant.Get failed" inside the interface.
                     TempPlan.Result := TempPlan.Result::Failed;
-                    TempPlan.Reason := CopyStr(ApplyReason, 1, MaxStrLen(TempPlan.Reason));
+                    TempPlan.Reason := CopyStr(StrSubstNo(EnvGoneErr, TempPlan."Environment Name"), 1, MaxStrLen(TempPlan.Reason));
+                    TempPlan.Modify(false);
+                    // Commit() — partial progress must be durable per skip-and-continue contract.
+                    Commit();
+                    OnAfterApplyReschedule(TempPlan);
+                end else begin
+                    if TryApply(TempPlan, BCEnv) then begin
+                        TempPlan.Result := TempPlan.Result::Succeeded;
+                        TempPlan.Reason := '';
+                    end else begin
+                        ApplyReason := GetLastErrorText();
+                        if ApplyReason = '' then
+                            ApplyReason := UnknownErrorLbl;
+                        TempPlan.Result := TempPlan.Result::Failed;
+                        TempPlan.Reason := CopyStr(ApplyReason, 1, MaxStrLen(TempPlan.Reason));
+                    end;
+                    TempPlan.Modify(false);
+                    // Commit() — partial progress must be durable per skip-and-continue contract.
+                    Commit();
+                    OnAfterApplyReschedule(TempPlan);
                 end;
-                TempPlan.Modify(false);
-                // Commit() — partial progress must be durable per skip-and-continue contract.
-                Commit();
-                OnAfterApplyReschedule(TempPlan);
             end;
         until TempPlan.Next() = 0;
 
@@ -227,6 +270,13 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         RetryOrchestrator: Codeunit "D4P BC Bulk Reschedule Mgt";
         SummaryPage: Page "D4P Bulk Reschedule Summary";
     begin
+        // Defensive: the summary is a modal UI. If this codeunit is ever invoked from a
+        // job queue, API endpoint, or other headless context, skip the page instead of
+        // hard-erroring on RunModal. Callers that need headless behavior should consume
+        // TempPlan directly.
+        if not GuiAllowed() then
+            exit;
+
         EnsureAdminAPI();
         SummaryPage.SetData(TempPlan);
         SummaryPage.SetOrchestrator(RetryOrchestrator);
@@ -279,13 +329,35 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     [TryFunction]
     local procedure TryFetchUpdates(var BCEnvironment: Record "D4P BC Environment")
     begin
-        AdminAPI.GetAvailableUpdates(BCEnvironment, TempFetchBuffer);
+        AdminAPI.GetAvailableUpdates(BCEnvironment, TempFetchBuffer, TempFetchRawResponse);
     end;
 
     local procedure ClearFetchBuffer()
     begin
         TempFetchBuffer.Reset();
         TempFetchBuffer.DeleteAll(false);
+        TempFetchRawResponse := '';
+    end;
+
+    /// <summary>
+    /// Stage a raw-JSON payload for an env into the per-run cache. Later handed to the
+    /// dialog via GetFetchCache so AssistEdit can re-parse without re-hitting the API.
+    /// </summary>
+    local procedure CacheRawResponse(EnvName: Text; RawResponse: Text)
+    begin
+        if FetchCache.ContainsKey(EnvName) then
+            FetchCache.Set(EnvName, RawResponse)
+        else
+            FetchCache.Add(EnvName, RawResponse);
+    end;
+
+    /// <summary>
+    /// Hand the per-env raw-JSON cache built during BuildPlan to the caller so it can
+    /// forward it into the dialog (SetFetchCache) and avoid AssistEdit re-fetches.
+    /// </summary>
+    procedure GetFetchCache(var TargetCache: Dictionary of [Text, Text])
+    begin
+        TargetCache := FetchCache;
     end;
 
     /// <summary>

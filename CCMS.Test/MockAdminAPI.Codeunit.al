@@ -112,8 +112,10 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
     /// Populates TempAvailableUpdate directly from the registered fixture string.
     /// If no fixture is registered, zero rows are inserted (no available updates).
     /// If ForceThrowOnFetch was called for this env, an Error is raised.
+    /// Populates RawResponse with the fixture string so a hypothetical future test of
+    /// the caching behavior would see a non-empty payload; current tests don't inspect it.
     /// </summary>
-    procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary)
+    procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary; var RawResponse: Text)
     var
         FixtureText: Text;
         Lines: List of [Text];
@@ -131,8 +133,13 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
         if ThrowOnFetchEnvs.Contains(BCEnvironment.Name) then
             Error('Fetch failed: simulated HTTP error for environment %1', BCEnvironment.Name);
 
-        if not FixtureStrings.Get(BCEnvironment.Name, FixtureText) then
+        if not FixtureStrings.Get(BCEnvironment.Name, FixtureText) then begin
+            RawResponse := '';
             exit;  // No fixture → zero rows
+        end;
+
+        // Hand back the raw fixture text as RawResponse (non-empty for caching tests).
+        RawResponse := FixtureText;
 
         // Split on the two-character literal \n
         Lines := FixtureText.Split('\n');

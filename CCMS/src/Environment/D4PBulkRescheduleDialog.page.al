@@ -140,6 +140,10 @@ page 62032 "D4P Bulk Reschedule Dialog"
     var
         AdminAPI: Interface "D4P IBC Admin API";
         AdminAPIInjected: Boolean;
+        // Per-env raw-JSON cache warmed by the orchestrator after BuildPlan. On AssistEdit
+        // the dialog prefers a parse-of-cached-JSON over a re-fetch. Missing keys fall back
+        // to a live fetch (e.g. a row that originated as a fetch failure never hit the cache).
+        FetchCache: Dictionary of [Text, Text];
         Accepted: Boolean;
         RowEditable: Boolean;
         RowStyleExpr: Text;
@@ -150,11 +154,9 @@ page 62032 "D4P Bulk Reschedule Dialog"
 
     trigger OnAfterGetRecord()
     begin
-        UpdateRowState();
-    end;
-
-    trigger OnAfterGetCurrRecord()
-    begin
+        // OnAfterGetRecord fires per row during rendering and is sufficient to keep
+        // RowStyleExpr/RowEditable in sync. OnAfterGetCurrRecord was previously calling
+        // UpdateRowState() too, which duplicated the work on every cursor move.
         UpdateRowState();
     end;
 
@@ -241,14 +243,28 @@ page 62032 "D4P Bulk Reschedule Dialog"
     end;
 
     /// <summary>
-    /// Test seam: inject an implementation of "D4P IBC Admin API" (e.g. a mock) so the
-    /// AssistEdit drilldown can be exercised without touching live HTTP. Must be called
-    /// before RunModal by the orchestrator.
+    /// Test seam: injects a custom API implementation. Intended for CCMS.Test only.
+    /// In production, the default <see cref="Codeunit::D4P BC Admin API"/> is used
+    /// automatically via <c>EnsureAdminAPI</c>. Calling this from a non-test context
+    /// is supported but semantically risky — a non-authenticating or mis-routed
+    /// implementation would be used for every subsequent API call in this session.
     /// </summary>
+    /// <param name="NewAPI">The implementation to use for all subsequent API calls.</param>
     procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
     begin
         AdminAPI := NewAPI;
         AdminAPIInjected := true;
+    end;
+
+    /// <summary>
+    /// Warm the dialog's per-env raw-JSON cache with payloads already fetched during
+    /// BuildPlan. AssistEdit drilldowns check this cache first and only re-fetch when a
+    /// key is missing (e.g. for a row whose original fetch failed).
+    /// </summary>
+    /// <param name="SourceCache">Source dictionary keyed by environment name; copied by value.</param>
+    procedure SetFetchCache(SourceCache: Dictionary of [Text, Text])
+    begin
+        FetchCache := SourceCache;
     end;
 
     /// <summary>
@@ -267,16 +283,19 @@ page 62032 "D4P Bulk Reschedule Dialog"
     end;
 
     /// <summary>
-    /// AssistEdit handler for Target Version — re-fetches the env's available updates
-    /// through the Admin API interface (injected or default per solution plan §2;
-    /// alternative caching was judged not worth the complexity for a one-off drilldown)
-    /// and opens page 62025 for selection. On OK, writes the user's choice back.
+    /// AssistEdit handler for Target Version — prefers the per-env raw-JSON cache warmed
+    /// by the orchestrator (so a click-to-drilldown is free) and only calls the Admin API
+    /// on cache miss (e.g. the original fetch failed). Opens page 62025 for selection and
+    /// writes the user's choice back on OK.
     /// </summary>
     local procedure PickTargetVersion()
     var
         BCEnv: Record "D4P BC Environment";
         TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        Parser: Codeunit "D4P BC Update Parser";
         UpdateSelectionDialog: Page "D4P Update Selection Dialog";
+        CachedJson: Text;
+        RawResponse: Text;
         TargetVersion: Text[100];
         SelectedDate: Date;
         LatestSelectableDate: Date;
@@ -286,11 +305,24 @@ page 62032 "D4P Bulk Reschedule Dialog"
         if Rec.Result <> Rec.Result::Pending then
             exit;
 
-        if not BCEnv.Get(Rec."Customer No.", Rec."Tenant ID", Rec."Environment Name") then
-            exit;
+        // Cache-hit path: skip the API entirely and re-parse the JSON we already have.
+        // An empty cached JSON means "we fetched and got nothing" — treat that the same
+        // as a live fetch that returned zero rows (Error below), rather than falling
+        // through to a second API call.
+        if FetchCache.Get(Rec."Environment Name", CachedJson) then begin
+            if CachedJson <> '' then
+                Parser.ParseUpdatesJson(CachedJson, TempAvailableUpdate);
+        end else begin
+            // Only these four fields are consumed downstream: the first two are the key,
+            // Application Family + Name are used by AdminAPI.GetAvailableUpdates to build
+            // the endpoint path; the inner BCTenant.Get is narrowed separately.
+            BCEnv.SetLoadFields("Customer No.", "Tenant ID", "Application Family", Name);
+            if not BCEnv.Get(Rec."Customer No.", Rec."Tenant ID", Rec."Environment Name") then
+                exit;
 
-        EnsureAdminAPI();
-        AdminAPI.GetAvailableUpdates(BCEnv, TempAvailableUpdate);
+            EnsureAdminAPI();
+            AdminAPI.GetAvailableUpdates(BCEnv, TempAvailableUpdate, RawResponse);
+        end;
 
         if TempAvailableUpdate.IsEmpty() then
             Error(NoUpdatesAvailableErr, Rec."Environment Name");

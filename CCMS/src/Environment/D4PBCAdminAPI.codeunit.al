@@ -14,13 +14,16 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
     /// parses the response through D4P BC Update Parser.
     /// Raises an error on HTTP failure — orchestrator wraps the call in a TryFunction.
     /// </summary>
-    procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary)
+    procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary; var RawResponse: Text)
     var
         BCTenant: Record "D4P BC Tenant";
         FailedToFetchErr: Label 'Failed to fetch available updates: %1', Comment = '%1 = Error message';
         Endpoint: Text;
         ResponseText: Text;
     begin
+        // Only Tenant ID + Client ID are consumed downstream by SendAdminAPIRequest /
+        // GetOAuthToken / GetClientSecret. Narrow the fetch accordingly.
+        BCTenant.SetLoadFields("Tenant ID", "Client ID");
         BCTenant.Get(BCEnvironment."Customer No.", BCEnvironment."Tenant ID");
 
         Endpoint := '/applications/' + BCEnvironment."Application Family" +
@@ -28,6 +31,9 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
         if not APIHelper.SendAdminAPIRequest(BCTenant, 'GET', Endpoint, '', ResponseText) then
             Error(FailedToFetchErr, ResponseText);
 
+        // Hand back the raw JSON so callers can cache it and skip the re-fetch on
+        // subsequent AssistEdit drilldowns for the same env.
+        RawResponse := ResponseText;
         Parser.ParseUpdatesJson(ResponseText, TempAvailableUpdate);
     end;
 
@@ -48,6 +54,9 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
         RequestBody: Text;
         ResponseText: Text;
     begin
+        // Only Tenant ID + Client ID are consumed downstream by SendAdminAPIRequest /
+        // GetOAuthToken / GetClientSecret. Narrow the fetch accordingly.
+        BCTenant.SetLoadFields("Tenant ID", "Client ID");
         BCTenant.Get(BCEnvironment."Customer No.", BCEnvironment."Tenant ID");
 
         // A selectable Date distinguishes a released-and-schedulable version from an
@@ -79,9 +88,15 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
             BCEnvironment."Expected Availability" := '';
         end else begin
             BCEnvironment."Selected DateTime" := 0DT;
-            BCEnvironment."Expected Availability" :=
-                Format(ExpectedYear) + '/' +
-                PadStr('', 2 - StrLen(Format(ExpectedMonth)), '0') + Format(ExpectedMonth);
+            // Guard against PadStr negative-length runtime errors (month outside 1..12)
+            // and against meaningless output (year = 0). Caller supplied invalid inputs →
+            // blank the field rather than write a malformed value.
+            if (ExpectedMonth in [1 .. 12]) and (ExpectedYear > 0) then
+                BCEnvironment."Expected Availability" :=
+                    Format(ExpectedYear) + '/' +
+                    PadStr('', 2 - StrLen(Format(ExpectedMonth)), '0') + Format(ExpectedMonth)
+            else
+                BCEnvironment."Expected Availability" := '';
         end;
         BCEnvironment.Modify(false);
 

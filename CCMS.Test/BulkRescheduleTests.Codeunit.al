@@ -65,7 +65,7 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         // Act
         Orchestrator.ApplyPlan(TempPlan);
 
-        // Assert
+        // Assert — count-level
         TempPlan.Reset();
         TempPlan.SetRange(Result, TempPlan.Result::Succeeded);
         SucceededCount := TempPlan.Count();
@@ -82,6 +82,21 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
 
         SelectCalls := MockAPI.GetSelectCalls();
         Assert.AreEqual(3, SelectCalls.Count(), 'Expected SelectTargetVersion called 3 times');
+
+        // U6: per-env identity assertions — catches bugs where count is correct but
+        // row assignments are swapped or a wrong env is recorded as Succeeded.
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'PROD-A');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected PROD-A in plan');
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result, 'PROD-A should be Succeeded');
+
+        TempPlan.SetRange("Environment Name", 'PROD-B');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected PROD-B in plan');
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result, 'PROD-B should be Succeeded');
+
+        TempPlan.SetRange("Environment Name", 'PROD-C');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected PROD-C in plan');
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result, 'PROD-C should be Succeeded');
     end;
 
     // -----------------------------------------------------------------------
@@ -127,7 +142,7 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         // Act
         Orchestrator.ApplyPlan(TempPlan);
 
-        // Assert
+        // Assert — count-level
         TempPlan.Reset();
         TempPlan.SetRange(Result, TempPlan.Result::Succeeded);
         SucceededCount := TempPlan.Count();
@@ -141,6 +156,21 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         // All 3 must have been attempted (skip-and-continue, not early abort)
         SelectCalls := MockAPI.GetSelectCalls();
         Assert.AreEqual(3, SelectCalls.Count(), 'Expected all 3 envs to be attempted');
+
+        // U6: per-env identity assertions — catches bugs where a wrong env is marked Failed
+        // or where result identities are swapped while counts still appear correct.
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'ENV-A');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected ENV-A in plan');
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result, 'ENV-A should be Succeeded');
+
+        TempPlan.SetRange("Environment Name", 'SANDBOX-A');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected SANDBOX-A in plan');
+        Assert.AreEqual(TempPlan.Result::Failed, TempPlan.Result, 'SANDBOX-A should be Failed');
+
+        TempPlan.SetRange("Environment Name", 'ENV-C');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected ENV-C in plan');
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result, 'ENV-C should be Succeeded');
     end;
 
     // -----------------------------------------------------------------------
@@ -579,6 +609,167 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
             'ENV-A must appear in SelectCalls exactly once (initial run only, not retried)');
         Assert.AreEqual(2, EnvBCallCount,
             'ENV-B must appear in SelectCalls exactly twice (run 1 failed + run 2 retry)');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  U4 — Subscriber vetoes ALL envs: no API calls, all rows Skipped
+    //
+    //  Binds D4P Veto All Subscriber which unconditionally sets Skip := true.
+    //  Verifies that:
+    //    - All 3 plan rows end up with Result = Skipped.
+    //    - The Reason on each row contains 'subscriber' (from SkippedBySubscriberLbl).
+    //    - SelectTargetVersion is never called (count = 0).
+    //
+    //  This is distinct from Test 5 (which skips only one named env). It tests
+    //  the boundary case where the entire plan is consumed by the subscriber gate
+    //  without a single API call.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_SubscriberVetoesAll_NoApiCallsAllSkipped()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        VetoSubscriber: Codeunit "D4P Veto All Subscriber";
+        SelectCalls: List of [Text];
+        CustNo: Code[20];
+        SkippedCount: Integer;
+        TenantIdD: Guid;
+        TenantIdE: Guid;
+        TenantIdF: Guid;
+    begin
+        // Arrange
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-U4');
+
+        Evaluate(TenantIdD, '{30000000-0000-0000-0000-000000000001}');
+        Evaluate(TenantIdE, '{30000000-0000-0000-0000-000000000002}');
+        Evaluate(TenantIdF, '{30000000-0000-0000-0000-000000000003}');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdD, 'VETO-ENV-1');
+        CreateTestEnv(BCEnv, CustNo, TenantIdE, 'VETO-ENV-2');
+        CreateTestEnv(BCEnv, CustNo, TenantIdF, 'VETO-ENV-3');
+
+        MockAPI.SetFixtureForEnv('VETO-ENV-1', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('VETO-ENV-2', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('VETO-ENV-3', '27.5|true|01-06-2026|6|2026');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // Simulate user accepting defaults for all Pending rows
+        TempPlan.SetRange(Result, TempPlan.Result::Pending);
+        if TempPlan.FindSet(true) then
+            repeat
+                TempPlan."Target Version" := '27.5';
+                TempPlan.Modify();
+            until TempPlan.Next() = 0;
+
+        // Bind the veto-all subscriber before ApplyPlan
+        BindSubscription(VetoSubscriber);
+
+        // Act
+        Orchestrator.ApplyPlan(TempPlan);
+
+        UnbindSubscription(VetoSubscriber);
+
+        // Assert — all 3 rows must be Skipped
+        TempPlan.Reset();
+        TempPlan.SetRange(Result, TempPlan.Result::Skipped);
+        SkippedCount := TempPlan.Count();
+        Assert.AreEqual(3, SkippedCount,
+            'All 3 plan rows must be Skipped when the veto-all subscriber fires for every env');
+
+        // Assert — each row's Reason must mention 'subscriber'
+        TempPlan.Reset();
+        if TempPlan.FindSet() then
+            repeat
+                Assert.IsTrue(
+                    StrPos(LowerCase(TempPlan.Reason), 'subscriber') > 0,
+                    StrSubstNo('Expected Reason to contain ''subscriber'' for env %1, got: %2',
+                        TempPlan."Environment Name", TempPlan.Reason));
+            until TempPlan.Next() = 0;
+
+        // Assert — zero API calls (subscriber fired before SelectTargetVersion)
+        SelectCalls := MockAPI.GetSelectCalls();
+        Assert.AreEqual(0, SelectCalls.Count(),
+            'SelectTargetVersion must not have been called when every env is vetoed by subscriber');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  U5 — BuildPlan replaces existing plan rows (reset contract)
+    //
+    //  Verifies that BuildPlan calls TempPlan.DeleteAll before inserting new
+    //  rows. Two stale rows are pre-inserted directly into TempPlan. After
+    //  BuildPlan runs for 1 real env, the count must be exactly 1 (not 3) and
+    //  the remaining row must be the real env's row, not a stale one.
+    //
+    //  Note: ApplyPlan is NOT called here. The stale rows have no matching
+    //  D4P BC Environment records; calling ApplyPlan on them would trigger the
+    //  M3 "env no longer exists" path. The contract being tested is purely
+    //  BuildPlan's responsibility to clear before populating.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_BuildPlanReplacesExistingRows()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        CustNo: Code[20];
+        TenantIdG: Guid;
+        TenantIdStale1: Guid;
+        TenantIdStale2: Guid;
+    begin
+        // Arrange — pre-populate TempPlan with 2 stale rows that BuildPlan must discard
+        Evaluate(TenantIdStale1, '{40000000-0000-0000-0000-000000000001}');
+        Evaluate(TenantIdStale2, '{40000000-0000-0000-0000-000000000002}');
+        Evaluate(TenantIdG,      '{40000000-0000-0000-0000-000000000003}');
+
+        TempPlan.Init();
+        TempPlan."Entry No." := 1;
+        TempPlan."Customer No." := 'STALE-CUST';
+        TempPlan."Tenant ID" := TenantIdStale1;
+        TempPlan."Environment Name" := 'STALE-1';
+        TempPlan.Result := TempPlan.Result::Pending;
+        TempPlan.Insert();
+
+        TempPlan.Init();
+        TempPlan."Entry No." := 2;
+        TempPlan."Customer No." := 'STALE-CUST';
+        TempPlan."Tenant ID" := TenantIdStale2;
+        TempPlan."Environment Name" := 'STALE-2';
+        TempPlan.Result := TempPlan.Result::Pending;
+        TempPlan.Insert();
+
+        Assert.AreEqual(2, TempPlan.Count(), 'Pre-condition: TempPlan must have 2 stale rows before BuildPlan');
+
+        // Register 1 real env
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-U5');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdG, 'REAL-ENV');
+        MockAPI.SetFixtureForEnv('REAL-ENV', '27.5|true|01-06-2026|6|2026');
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        // Act
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // Assert — exactly 1 row (the 2 stale rows must have been discarded by DeleteAll)
+        Assert.AreEqual(1, TempPlan.Count(),
+            'BuildPlan must replace all existing rows; TempPlan must contain exactly 1 row after build (not 3)');
+
+        // Assert — the surviving row is the real env's row, not a stale one
+        TempPlan.Reset();
+        TempPlan.FindFirst();
+        Assert.AreEqual('REAL-ENV', TempPlan."Environment Name",
+            'The single remaining plan row must be for REAL-ENV, not a stale row');
+        Assert.AreNotEqual('STALE-1', TempPlan."Environment Name",
+            'STALE-1 must not survive BuildPlan''s reset');
+        Assert.AreNotEqual('STALE-2', TempPlan."Environment Name",
+            'STALE-2 must not survive BuildPlan''s reset');
     end;
 
     // -----------------------------------------------------------------------
