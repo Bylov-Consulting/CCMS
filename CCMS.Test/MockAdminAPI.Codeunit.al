@@ -64,6 +64,16 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
     end;
 
     /// <summary>
+    /// Clears all forced-failure registrations so every subsequent
+    /// SelectTargetVersion call returns true regardless of env name.
+    /// Call between ApplyPlan runs when testing the Retry Failed path.
+    /// </summary>
+    procedure ClearFailures()
+    begin
+        Clear(FailOnEnvs);
+    end;
+
+    /// <summary>
     /// Makes GetAvailableUpdates raise an Error for the named environment.
     /// Simulates an HTTP failure during the fetch phase.
     /// </summary>

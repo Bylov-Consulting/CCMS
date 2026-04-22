@@ -63,6 +63,9 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         end;
 
         BulkDialog.SetData(TempPlan);
+        // Forward the orchestrator's (potentially mocked) interface into the dialog so the
+        // AssistEdit drilldown uses the same seam — no more bypass via `new Codeunit`.
+        BulkDialog.SetAdminAPI(AdminAPI);
         BulkDialog.RunModal();
         if not BulkDialog.WasAccepted() then
             exit;
@@ -170,10 +173,10 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
 
         TempPlan.Reset();
         TempPlan.SetRange(Result, TempPlan.Result::Pending);
-        if not TempPlan.FindSet() then begin
-            TempPlan.Reset();
+        if not TempPlan.FindSet() then
+            // Early-exit: do NOT Reset() here — discarding caller filters would be surprising
+            // in the Retry Failed flow. The end-of-procedure Reset() covers the happy path.
             exit;
-        end;
 
         repeat
             Skip := false;
@@ -216,15 +219,18 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     /// Runs the summary page for TempPlan. The summary page receives a fresh orchestrator
     /// instance for its Retry Failed action; ApplyPlan calls EnsureAdminAPI() on every
     /// invocation, so a fresh instance re-binds the default Admin API correctly. AL has
-    /// no "self" reference for codeunits, hence the local instance.
+    /// no "self" reference for codeunits, hence the local instance. We also forward our
+    /// (possibly injected) AdminAPI interface so Retry Failed stays on the same seam.
     /// </summary>
     procedure ShowSummary(var TempPlan: Record "D4P BC Reschedule Plan Line" temporary)
     var
         RetryOrchestrator: Codeunit "D4P BC Bulk Reschedule Mgt";
         SummaryPage: Page "D4P Bulk Reschedule Summary";
     begin
+        EnsureAdminAPI();
         SummaryPage.SetData(TempPlan);
         SummaryPage.SetOrchestrator(RetryOrchestrator);
+        SummaryPage.SetAdminAPI(AdminAPI);
         SummaryPage.RunModal();
     end;
 

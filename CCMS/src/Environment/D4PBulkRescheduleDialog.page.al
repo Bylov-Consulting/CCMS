@@ -138,6 +138,8 @@ page 62032 "D4P Bulk Reschedule Dialog"
     }
 
     var
+        AdminAPI: Interface "D4P IBC Admin API";
+        AdminAPIInjected: Boolean;
         Accepted: Boolean;
         RowEditable: Boolean;
         RowStyleExpr: Text;
@@ -239,8 +241,34 @@ page 62032 "D4P Bulk Reschedule Dialog"
     end;
 
     /// <summary>
+    /// Test seam: inject an implementation of "D4P IBC Admin API" (e.g. a mock) so the
+    /// AssistEdit drilldown can be exercised without touching live HTTP. Must be called
+    /// before RunModal by the orchestrator.
+    /// </summary>
+    procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
+    begin
+        AdminAPI := NewAPI;
+        AdminAPIInjected := true;
+    end;
+
+    /// <summary>
+    /// If no implementation was injected via SetAdminAPI, bind AdminAPI to the default
+    /// D4P BC Admin API codeunit on first use.
+    /// </summary>
+    local procedure EnsureAdminAPI()
+    var
+        DefaultImpl: Codeunit "D4P BC Admin API";
+    begin
+        if AdminAPIInjected then
+            exit;
+
+        AdminAPI := DefaultImpl;
+        AdminAPIInjected := true;
+    end;
+
+    /// <summary>
     /// AssistEdit handler for Target Version — re-fetches the env's available updates
-    /// through the default Admin API codeunit (simple but robust per solution plan §2;
+    /// through the Admin API interface (injected or default per solution plan §2;
     /// alternative caching was judged not worth the complexity for a one-off drilldown)
     /// and opens page 62025 for selection. On OK, writes the user's choice back.
     /// </summary>
@@ -248,11 +276,10 @@ page 62032 "D4P Bulk Reschedule Dialog"
     var
         BCEnv: Record "D4P BC Environment";
         TempAvailableUpdate: Record "D4P BC Available Update" temporary;
-        AdminAPIImpl: Codeunit "D4P BC Admin API";
         UpdateSelectionDialog: Page "D4P Update Selection Dialog";
-        AdminAPI: Interface "D4P IBC Admin API";
         TargetVersion: Text[100];
         SelectedDate: Date;
+        LatestSelectableDate: Date;
         ExpectedMonth: Integer;
         ExpectedYear: Integer;
     begin
@@ -262,7 +289,7 @@ page 62032 "D4P Bulk Reschedule Dialog"
         if not BCEnv.Get(Rec."Customer No.", Rec."Tenant ID", Rec."Environment Name") then
             exit;
 
-        AdminAPI := AdminAPIImpl;
+        EnsureAdminAPI();
         AdminAPI.GetAvailableUpdates(BCEnv, TempAvailableUpdate);
 
         if TempAvailableUpdate.IsEmpty() then
@@ -272,15 +299,17 @@ page 62032 "D4P Bulk Reschedule Dialog"
         if UpdateSelectionDialog.RunModal() <> Action::OK then
             exit;
 
-        UpdateSelectionDialog.GetSelectedVersion(TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear);
+        UpdateSelectionDialog.GetSelectedVersion(TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear, LatestSelectableDate);
 
         Rec."Target Version" := TargetVersion;
         Rec."Selected Date" := SelectedDate;
         Rec."Expected Month" := ExpectedMonth;
         Rec."Expected Year" := ExpectedYear;
         Rec.Available := (SelectedDate <> 0D);
-        if SelectedDate <> 0D then
-            Rec."Latest Selectable Date" := SelectedDate;
+        // Preserve the picked row's real upper bound so the date-validation OnValidate
+        // keeps its cap. Previously this wrote SelectedDate here, which removed the
+        // upper bound and let partners schedule past the API deadline.
+        Rec."Latest Selectable Date" := LatestSelectableDate;
         Rec.Modify(false);
         CurrPage.Update(false);
     end;

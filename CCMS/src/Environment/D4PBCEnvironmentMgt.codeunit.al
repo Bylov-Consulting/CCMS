@@ -641,7 +641,7 @@ codeunit 62000 "D4P BC Environment Mgt"
         BCTenant.Get(BCEnvironment."Customer No.", BCEnvironment."Tenant ID");
         BCSetup.Get();
         TempAvailableUpdate.Reset();
-        TempAvailableUpdate.DeleteAll();
+        TempAvailableUpdate.DeleteAll(false);
 
         // Show progress dialog (card UX unchanged — plan §8 step 12)
         ProgressDialog.Open(FetchingUpdatesMsg);

@@ -124,7 +124,9 @@ page 62033 "D4P Bulk Reschedule Summary"
 
     var
         OrchestratorRef: Codeunit "D4P BC Bulk Reschedule Mgt";
+        AdminAPI: Interface "D4P IBC Admin API";
         OrchestratorSet: Boolean;
+        AdminAPIInjected: Boolean;
         RowStyleExpr: Text;
         ResultStyleExpr: Text;
         CaptionLbl: Label 'Bulk Reschedule Complete — %1 Succeeded, %2 Skipped, %3 Failed', Comment = '%1 Succeeded count, %2 Skipped count, %3 Failed count';
@@ -168,6 +170,19 @@ page 62033 "D4P Bulk Reschedule Summary"
         OrchestratorSet := true;
     end;
 
+    /// <summary>
+    /// Forward the caller's Admin API interface so Retry Failed uses the same seam
+    /// (including any injected mock). AL's codeunit-by-value semantics mean the
+    /// orchestrator we were given via SetOrchestrator is a COPY — we therefore store
+    /// the interface and re-apply it to that copy just before ApplyPlan so the copy's
+    /// AdminAPI matches the caller's.
+    /// </summary>
+    procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
+    begin
+        AdminAPI := NewAPI;
+        AdminAPIInjected := true;
+    end;
+
     local procedure RetryFailedRows()
     var
         AnyFailed: Boolean;
@@ -191,8 +206,16 @@ page 62033 "D4P Bulk Reschedule Summary"
         until Rec.Next() = 0;
         Rec.Reset();
 
-        if AnyFailed then
+        if AnyFailed then begin
+            // Re-apply the injected Admin API onto our orchestrator copy so Retry Failed
+            // hits the caller's interface (including any test mock). Done here rather than
+            // in SetAdminAPI so the two wiring calls are order-independent, and so a
+            // second Retry re-applies the interface after the orchestrator's internal state
+            // has been mutated by the previous ApplyPlan.
+            if AdminAPIInjected then
+                OrchestratorRef.SetAdminAPI(AdminAPI);
             OrchestratorRef.ApplyPlan(Rec);
+        end;
 
         CurrPage.Update(false);
         RefreshCaption();

@@ -87,8 +87,6 @@ permissionset 62001 "D4P BC ADMIN READ"
         page "D4P BC Customer FactBox" = X,
         page "D4P BC Admin Headline" = X,
         page "D4P BC Capacity List" = X,
-        page "D4P Bulk Reschedule Dialog" = X,
-        page "D4P Bulk Reschedule Summary" = X,
 
         // Codeunit for reading data
         codeunit "D4P BC Environment Mgt" = X,
@@ -97,9 +95,6 @@ permissionset 62001 "D4P BC ADMIN READ"
         codeunit "D4P KQL Query Store Init" = X,
         codeunit "D4P Telemetry Helper" = X,
         codeunit "D4P BC Operations Helper" = X,
-        codeunit "D4P BC Admin API" = X,
-        codeunit "D4P BC Bulk Reschedule Mgt" = X,
-        codeunit "D4P BC Update Parser" = X,
 
         // Reports - needed for telemetry queries
         report "D4P Load Data" = X,

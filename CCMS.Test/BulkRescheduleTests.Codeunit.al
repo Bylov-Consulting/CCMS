@@ -311,6 +311,277 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
     end;
 
     // -----------------------------------------------------------------------
+    //  T2 — OnAfterApplyReschedule fires for every processed environment
+    //
+    //  3 envs are used. SANDBOX-MID is configured to fail via ForceFailOn so
+    //  that the subscriber sees at least one Succeeded and one Failed entry.
+    //  The test binds D4P Apply Recorder Subscriber (manual binding), runs
+    //  BuildPlan + ApplyPlan, then asserts:
+    //    - exactly 3 subscriber calls were recorded (one per env),
+    //    - at least one call ends with "|Succeeded",
+    //    - at least one call ends with "|Failed".
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_OnAfterApplyReschedule_FiresForEveryProcessedEnv()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        Recorder: Codeunit "D4P Apply Recorder Subscriber";
+        Calls: List of [Text];
+        CustNo: Code[20];
+        HasSucceeded: Boolean;
+        HasFailed: Boolean;
+        I: Integer;
+        Entry: Text;
+    begin
+        // Arrange
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-T7');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'PROD-X');
+        CreateTestEnv(BCEnv, CustNo, TenantIdB, 'SANDBOX-MID');
+        CreateTestEnv(BCEnv, CustNo, TenantIdC, 'PROD-Z');
+
+        MockAPI.SetFixtureForEnv('PROD-X', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('SANDBOX-MID', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('PROD-Z', '27.5|true|01-06-2026|6|2026');
+
+        // SANDBOX-MID will fail on SelectTargetVersion
+        MockAPI.ForceFailOn('SANDBOX-MID');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+        Recorder.ClearCalls();
+        BindSubscription(Recorder);
+
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // Accept defaults for all Pending rows
+        TempPlan.SetRange(Result, TempPlan.Result::Pending);
+        if TempPlan.FindSet(true) then
+            repeat
+                TempPlan."Target Version" := '27.5';
+                TempPlan.Modify();
+            until TempPlan.Next() = 0;
+
+        // Act
+        Orchestrator.ApplyPlan(TempPlan);
+
+        UnbindSubscription(Recorder);
+
+        // Assert
+        Calls := Recorder.GetCalls();
+        Assert.AreEqual(3, Calls.Count(),
+            'OnAfterApplyReschedule must fire exactly once per processed environment (3 expected)');
+
+        HasSucceeded := false;
+        HasFailed := false;
+        for I := 1 to Calls.Count() do begin
+            Entry := Calls.Get(I);
+            if StrPos(Entry, '|Succeeded') > 0 then
+                HasSucceeded := true;
+            if StrPos(Entry, '|Failed') > 0 then
+                HasFailed := true;
+        end;
+
+        Assert.IsTrue(HasSucceeded,
+            'At least one subscriber entry must show |Succeeded (PROD-X or PROD-Z)');
+        Assert.IsTrue(HasFailed,
+            'At least one subscriber entry must show |Failed (SANDBOX-MID was configured to fail)');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  T3 — ApplyPlan on an all-Skipped plan makes zero API calls
+    //
+    //  The temp plan is constructed directly (bypassing BuildPlan) with 3 rows
+    //  all pre-set to Result = Skipped. ApplyPlan filters on Pending rows so
+    //  it must find nothing to process and make no SelectTargetVersion calls.
+    //  Row states must remain Skipped after the call.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_ApplyPlanAllSkipped_MakesNoApiCalls()
+    var
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        SelectCalls: List of [Text];
+        SkippedCount: Integer;
+        TenantIdX: Guid;
+        TenantIdY: Guid;
+        TenantIdZ: Guid;
+    begin
+        // Arrange — build the plan manually; no BuildPlan or database envs needed
+        Evaluate(TenantIdX, '{20000000-0000-0000-0000-000000000001}');
+        Evaluate(TenantIdY, '{20000000-0000-0000-0000-000000000002}');
+        Evaluate(TenantIdZ, '{20000000-0000-0000-0000-000000000003}');
+
+        MockAPI.Reset();
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        // Row 1
+        TempPlan.Init();
+        TempPlan."Entry No." := 1;
+        TempPlan."Customer No." := 'TBULK-T8';
+        TempPlan."Tenant ID" := TenantIdX;
+        TempPlan."Environment Name" := 'SKP-ENV-1';
+        TempPlan.Result := TempPlan.Result::Skipped;
+        TempPlan.Reason := 'Pre-skipped';
+        TempPlan.Insert();
+
+        // Row 2
+        TempPlan.Init();
+        TempPlan."Entry No." := 2;
+        TempPlan."Customer No." := 'TBULK-T8';
+        TempPlan."Tenant ID" := TenantIdY;
+        TempPlan."Environment Name" := 'SKP-ENV-2';
+        TempPlan.Result := TempPlan.Result::Skipped;
+        TempPlan.Reason := 'Pre-skipped';
+        TempPlan.Insert();
+
+        // Row 3
+        TempPlan.Init();
+        TempPlan."Entry No." := 3;
+        TempPlan."Customer No." := 'TBULK-T8';
+        TempPlan."Tenant ID" := TenantIdZ;
+        TempPlan."Environment Name" := 'SKP-ENV-3';
+        TempPlan.Result := TempPlan.Result::Skipped;
+        TempPlan.Reason := 'Pre-skipped';
+        TempPlan.Insert();
+
+        // Act
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // Assert — zero SelectTargetVersion calls
+        SelectCalls := MockAPI.GetSelectCalls();
+        Assert.AreEqual(0, SelectCalls.Count(),
+            'ApplyPlan on an all-Skipped plan must make zero SelectTargetVersion API calls');
+
+        // All rows must remain Skipped
+        TempPlan.Reset();
+        TempPlan.SetRange(Result, TempPlan.Result::Skipped);
+        SkippedCount := TempPlan.Count();
+        Assert.AreEqual(3, SkippedCount,
+            'All 3 rows must remain Skipped after ApplyPlan with no Pending rows');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  T4 — Retry Failed: only Failed rows are re-applied; Succeeded rows are
+    //       untouched and not re-sent to the API
+    //
+    //  Flow:
+    //    Run 1: ENV-A succeeds, ENV-B fails (ForceFailOn).
+    //    Reset: ENV-B row is manually set back to Pending (simulating the
+    //           "Retry Failed" UI gesture). ClearFailures() removes the mock's
+    //           forced-failure so the second call will succeed.
+    //    Run 2: ApplyPlan again — only ENV-B's Pending row is processed.
+    //
+    //  Key assertions:
+    //    - After run 2: ENV-A is still Succeeded, ENV-B is now Succeeded.
+    //    - Total SelectCalls = 3: ENV-A (run 1) + ENV-B (run 1) + ENV-B (run 2).
+    //      ENV-A must NOT appear in SelectCalls a second time.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_RetryFailed_OnlyReappliesFailedRowsSuccessIsPreserved()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        SelectCalls: List of [Text];
+        CustNo: Code[20];
+        EnvACallCount: Integer;
+        EnvBCallCount: Integer;
+        I: Integer;
+        Entry: Text;
+    begin
+        // Arrange — run 1
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-T9');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'ENV-A');
+        CreateTestEnv(BCEnv, CustNo, TenantIdB, 'ENV-B');
+
+        MockAPI.SetFixtureForEnv('ENV-A', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('ENV-B', '27.5|true|01-06-2026|6|2026');
+
+        // ENV-B will fail on the first run
+        MockAPI.ForceFailOn('ENV-B');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // Accept defaults for all Pending rows
+        TempPlan.SetRange(Result, TempPlan.Result::Pending);
+        if TempPlan.FindSet(true) then
+            repeat
+                TempPlan."Target Version" := '27.5';
+                TempPlan.Modify();
+            until TempPlan.Next() = 0;
+
+        // Run 1: ENV-A succeeds, ENV-B fails
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // Verify run 1 state before retry
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'ENV-A');
+        TempPlan.FindFirst();
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result,
+            'ENV-A must be Succeeded after run 1');
+
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'ENV-B');
+        TempPlan.FindFirst();
+        Assert.AreEqual(TempPlan.Result::Failed, TempPlan.Result,
+            'ENV-B must be Failed after run 1');
+
+        // Simulate "Retry Failed" UI gesture: reset ENV-B to Pending
+        TempPlan.Result := TempPlan.Result::Pending;
+        TempPlan.Reason := '';
+        TempPlan.Modify();
+
+        // Clear the forced failure so ENV-B succeeds on retry
+        MockAPI.ClearFailures();
+
+        // Act — run 2 (retry): only ENV-B's Pending row is processed
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // Assert — ENV-A unchanged (still Succeeded)
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'ENV-A');
+        TempPlan.FindFirst();
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result,
+            'ENV-A must still be Succeeded after retry — its row was not Pending so it must not be touched');
+
+        // ENV-B now Succeeded
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'ENV-B');
+        TempPlan.FindFirst();
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result,
+            'ENV-B must be Succeeded after retry');
+
+        // Total SelectCalls = 3: ENV-A×1 (run 1) + ENV-B×1 (run 1) + ENV-B×1 (run 2)
+        SelectCalls := MockAPI.GetSelectCalls();
+        Assert.AreEqual(3, SelectCalls.Count(),
+            'Total SelectTargetVersion calls must be 3: ENV-A once (run 1) and ENV-B twice (runs 1 and 2)');
+
+        // ENV-A must appear exactly once (not retried)
+        EnvACallCount := 0;
+        EnvBCallCount := 0;
+        for I := 1 to SelectCalls.Count() do begin
+            Entry := SelectCalls.Get(I);
+            if StrPos(Entry, 'ENV-A|') = 1 then
+                EnvACallCount += 1;
+            if StrPos(Entry, 'ENV-B|') = 1 then
+                EnvBCallCount += 1;
+        end;
+
+        Assert.AreEqual(1, EnvACallCount,
+            'ENV-A must appear in SelectCalls exactly once (initial run only, not retried)');
+        Assert.AreEqual(2, EnvBCallCount,
+            'ENV-B must appear in SelectCalls exactly twice (run 1 failed + run 2 retry)');
+    end;
+
+    // -----------------------------------------------------------------------
     //  Helpers
     // -----------------------------------------------------------------------
 

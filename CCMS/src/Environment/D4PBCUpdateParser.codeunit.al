@@ -181,21 +181,111 @@ codeunit 62006 "D4P BC Update Parser"
 
     local procedure RankAvailable(var Candidate: Record "D4P BC Available Update" temporary; var TempBest: Record "D4P BC Available Update" temporary; var HasBest: Boolean)
     begin
-        if (not HasBest) or (Candidate."Target Version" > TempBest."Target Version") then begin
+        if (not HasBest) or (CompareVersions(Candidate."Target Version", TempBest."Target Version") > 0) then begin
             TempBest := Candidate;
             HasBest := true;
         end;
     end;
 
     local procedure RankUnreleased(var Candidate: Record "D4P BC Available Update" temporary; var TempBest: Record "D4P BC Available Update" temporary; var HasBest: Boolean)
+    var
+        VersionCompare: Integer;
     begin
-        if (not HasBest) or
-           (Candidate."Expected Year" > TempBest."Expected Year") or
-           ((Candidate."Expected Year" = TempBest."Expected Year") and
-            (Candidate."Expected Month" > TempBest."Expected Month"))
-        then begin
+        if not HasBest then begin
             TempBest := Candidate;
             HasBest := true;
+            exit;
         end;
+
+        // Month/Year is the primary ranking for unreleased candidates because the Admin API
+        // may return identical "Target Version" placeholders for several upcoming months.
+        // Only fall back to version comparison on an exact month/year tie.
+        if Candidate."Expected Year" > TempBest."Expected Year" then begin
+            TempBest := Candidate;
+            exit;
+        end;
+        if Candidate."Expected Year" < TempBest."Expected Year" then
+            exit;
+
+        if Candidate."Expected Month" > TempBest."Expected Month" then begin
+            TempBest := Candidate;
+            exit;
+        end;
+        if Candidate."Expected Month" < TempBest."Expected Month" then
+            exit;
+
+        VersionCompare := CompareVersions(Candidate."Target Version", TempBest."Target Version");
+        if VersionCompare > 0 then
+            TempBest := Candidate;
+    end;
+
+    /// <summary>
+    /// Returns 1 if A > B, -1 if A < B, 0 if equal. Splits both strings on '.' and compares
+    /// each segment numerically, so "27.10" correctly outranks "27.9". Non-numeric segments
+    /// (e.g. pre-release tags the Admin API may return) sort as -1 — below any numeric
+    /// segment — to keep the ordering predictable and deterministic.
+    /// </summary>
+    local procedure CompareVersions(A: Text[100]; B: Text[100]): Integer
+    var
+        SegA: Integer;
+        SegB: Integer;
+        i: Integer;
+        MaxParts: Integer;
+        PartsA: List of [Text];
+        PartsB: List of [Text];
+    begin
+        PartsA := SplitVersion(A);
+        PartsB := SplitVersion(B);
+
+        if PartsA.Count() > PartsB.Count() then
+            MaxParts := PartsA.Count()
+        else
+            MaxParts := PartsB.Count();
+
+        for i := 1 to MaxParts do begin
+            SegA := SegmentAsInt(PartsA, i);
+            SegB := SegmentAsInt(PartsB, i);
+            if SegA > SegB then
+                exit(1);
+            if SegA < SegB then
+                exit(-1);
+        end;
+        exit(0);
+    end;
+
+    local procedure SplitVersion(V: Text[100]) Result: List of [Text]
+    var
+        Part: Text;
+        i: Integer;
+        Ch: Char;
+    begin
+        Part := '';
+        for i := 1 to StrLen(V) do begin
+            Ch := V[i];
+            if Ch = '.' then begin
+                Result.Add(Part);
+                Part := '';
+            end else
+                Part += Format(Ch);
+        end;
+        Result.Add(Part);
+    end;
+
+    local procedure SegmentAsInt(Parts: List of [Text]; Index: Integer): Integer
+    var
+        Segment: Text;
+        Value: Integer;
+    begin
+        // Missing segments (e.g. "27" vs "27.10") are treated as 0 so "27.0" = "27".
+        if Index > Parts.Count() then
+            exit(0);
+
+        Segment := Parts.Get(Index);
+        if Segment = '' then
+            exit(-1);
+        if Evaluate(Value, Segment) then
+            exit(Value);
+        // Non-numeric (pre-release tag) sorts below any numeric segment.
+        exit(-1);
     end;
 }

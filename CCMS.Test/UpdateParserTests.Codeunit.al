@@ -150,6 +150,106 @@ codeunit 62102 "D4P Update Parser Tests"
             'Latest Selectable Date must be parsed from latestSelectableDate (legacy shape without Time suffix)');
     end;
 
+    // -------------------------------------------------------------------------
+    // T1 variant A — Multi-version fixture: 27.9 vs 27.10, picker must choose 27.10
+    //
+    // This test directly constructs the TempAvailableUpdate temp table (no JSON
+    // parsing) to isolate PickDefaultTargetVersion from the parser. It catches
+    // the string-comparison bug described in Critical C1: lexicographic ordering
+    // would rank "27.9" > "27.10" because '9' > '1', so a naive string compare
+    // would return the OLDER version.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure PickDefaultTargetVersion_MultipleAvailable_PicksHighestSemanticVersion()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        TargetVersion: Text[100];
+        DefaultDate: Date;
+        ExpectedMonth: Integer;
+        ExpectedYear: Integer;
+    begin
+        // Arrange — populate temp table directly, bypassing JSON parser
+        // Row 1: version 27.9, available, date 15-May-2026
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 1;
+        TempAvailableUpdate."Target Version" := '27.9';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(15, 5, 2026);
+        TempAvailableUpdate.Insert();
+
+        // Row 2: version 27.10, available, date 15-Jun-2026
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 2;
+        TempAvailableUpdate."Target Version" := '27.10';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(15, 6, 2026);
+        TempAvailableUpdate.Insert();
+
+        // Act
+        Parser.PickDefaultTargetVersion(TempAvailableUpdate, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
+
+        // Assert — string compare "27.9" > "27.10" (lexicographic) would incorrectly
+        // pick 27.9; numeric tuple compare must pick 27.10 (the higher minor version).
+        Assert.AreEqual('27.10', TargetVersion,
+            'PickDefaultTargetVersion must pick the highest semantic version (27.10 > 27.9); string comparison would incorrectly pick 27.9');
+        Assert.AreEqual(DMY2Date(15, 6, 2026), DefaultDate,
+            'DefaultDate must match the Latest Selectable Date of the winning version (27.10)');
+    end;
+
+    // -------------------------------------------------------------------------
+    // T1 variant B — Double-digit vs single-digit minor: 28.10 beats 28.1 and 28.2
+    //
+    // Three rows in one table: 28.1, 28.10, 28.2. Lexicographic ordering would
+    // rank "28.2" > "28.10" > "28.1". Numeric tuple comparison must rank
+    // 28.10 as the winner.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure PickDefaultTargetVersion_DoubleDigitVsSingleDigit_PicksHigher()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        TargetVersion: Text[100];
+        DefaultDate: Date;
+        ExpectedMonth: Integer;
+        ExpectedYear: Integer;
+    begin
+        // Arrange — 3 rows, all available. Inserted in a non-sorted order to
+        // confirm there is no incidental dependency on insertion order.
+        // Row 1: 28.1 — lowest minor
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 1;
+        TempAvailableUpdate."Target Version" := '28.1';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(15, 1, 2027);
+        TempAvailableUpdate.Insert();
+
+        // Row 2: 28.10 — highest minor (lexicographically "less than" 28.2)
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 2;
+        TempAvailableUpdate."Target Version" := '28.10';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(15, 10, 2027);
+        TempAvailableUpdate.Insert();
+
+        // Row 3: 28.2 — lexicographically "greater than" 28.10 but semantically lower
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 3;
+        TempAvailableUpdate."Target Version" := '28.2';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(15, 2, 2027);
+        TempAvailableUpdate.Insert();
+
+        // Act
+        Parser.PickDefaultTargetVersion(TempAvailableUpdate, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
+
+        // Assert — lexicographic compare would pick 28.9 or 28.2; numeric must pick 28.10
+        Assert.AreEqual('28.10', TargetVersion,
+            'PickDefaultTargetVersion must pick 28.10 as highest minor even though "28.2" > "28.10" lexicographically');
+        Assert.AreEqual(DMY2Date(15, 10, 2027), DefaultDate,
+            'DefaultDate must correspond to the winning version 28.10');
+    end;
+
     var
         Assert: Codeunit "Library Assert";
 }
