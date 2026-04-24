@@ -1,6 +1,7 @@
 codeunit 62101 "D4P Bulk Reschedule Tests"
 {
     Subtype = Test;
+    TestPermissions = Disabled;
 
     // -----------------------------------------------------------------------
     //  Shared fixtures

@@ -1,6 +1,7 @@
 codeunit 62102 "D4P Update Parser Tests"
 {
     Subtype = Test;
+    TestPermissions = Disabled;
 
     // -------------------------------------------------------------------------
     // Test 7 — Released version: latestSelectableDateTime → Date, rolloutStatus
