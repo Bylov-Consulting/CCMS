@@ -3,25 +3,20 @@ namespace D4P.CCMS.Environment;
 /// <summary>
 /// Phase-2 dialog of the bulk-reschedule flow. Presents one row per selected
 /// environment, with inline edit of Target Version (AssistEdit drilldown to
-/// page 62025) and Selected Date. Accept/Cancel are exposed via the standard
-/// systemaction(OK)/systemaction(Cancel) footer buttons; callers check
-/// RunModal() = Action::OK.
+/// page 62025) and Selected Date. Accept/Cancel exposed via WasAccepted()
+/// after RunModal.
 ///
-/// PageType = ConfigurationDialog because:
-///   (a) StandardDialog with a repeater raises AW0008 (see page 62025);
-///   (b) PageType = List does not allow systemaction in BC 28 (AL0124);
-///   (c) ConfigurationDialog is the only Web-Client-supported page type
-///       that combines a repeater body with footer OK/Cancel buttons.
-/// Note: ConfigurationDialog is currently in BC public preview (AL0906).
-/// If Microsoft removes or changes it, fall back to PageType = List with
-/// the OK action promoted to the ribbon (Promoted = true).
+/// PageType = List (not StandardDialog because StandardDialog with a repeater
+/// raises AW0008; not ConfigurationDialog because it does not render a
+/// repeater body at runtime in the BC 28 Web Client even though it compiles).
+/// The OK action is promoted to the ribbon so it is a big visible button
+/// without forcing users to open the Actions dropdown.
 /// </summary>
 page 62032 "D4P Bulk Reschedule Dialog"
 {
     ApplicationArea = All;
     Caption = 'Bulk Reschedule Updates';
-    PageType = ConfigurationDialog;
-    Extensible = false;
+    PageType = List;
     SourceTable = "D4P BC Reschedule Plan Line";
     SourceTableTemporary = true;
     Editable = true;
@@ -33,87 +28,80 @@ page 62032 "D4P Bulk Reschedule Dialog"
     {
         area(Content)
         {
-            // ConfigurationDialog's Content area can only directly contain groups (AL0506),
-            // so the repeater is wrapped in an unlabelled group.
-            group(PlanGroup)
+            repeater(Plan)
             {
-                ShowCaption = false;
-
-                repeater(Plan)
+                Caption = 'Plan';
+                field("Environment Name"; Rec."Environment Name")
                 {
-                    Caption = 'Plan';
-                    field("Environment Name"; Rec."Environment Name")
-                    {
-                        Editable = false;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the environment name.';
-                    }
-                    field("Customer No."; Rec."Customer No.")
-                    {
-                        Editable = false;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the customer number that owns the environment.';
-                    }
-                    field("Current Version"; Rec."Current Version")
-                    {
-                        Editable = false;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the environment''s current version.';
-                    }
-                    field("Target Version"; Rec."Target Version")
-                    {
-                        Editable = RowEditable;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the target version to schedule. Choose from the AssistEdit to see all updates available for this environment.';
+                    Editable = false;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the environment name.';
+                }
+                field("Customer No."; Rec."Customer No.")
+                {
+                    Editable = false;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the customer number that owns the environment.';
+                }
+                field("Current Version"; Rec."Current Version")
+                {
+                    Editable = false;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the environment''s current version.';
+                }
+                field("Target Version"; Rec."Target Version")
+                {
+                    Editable = RowEditable;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the target version to schedule. Choose from the AssistEdit to see all updates available for this environment.';
 
-                        trigger OnAssistEdit()
-                        begin
-                            PickTargetVersion();
-                        end;
-                    }
-                    field("Selected Date"; Rec."Selected Date")
-                    {
-                        Editable = RowEditable;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the date to apply the update (between today and the latest selectable date).';
+                    trigger OnAssistEdit()
+                    begin
+                        PickTargetVersion();
+                    end;
+                }
+                field("Selected Date"; Rec."Selected Date")
+                {
+                    Editable = RowEditable;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the date to apply the update (between today and the latest selectable date).';
 
-                        trigger OnValidate()
-                        begin
-                            ValidateSelectedDate();
-                        end;
-                    }
-                    field("Latest Selectable Date"; Rec."Latest Selectable Date")
-                    {
-                        Editable = false;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the latest date on which this environment can accept the target version.';
-                    }
-                    field("Expected Month"; Rec."Expected Month")
-                    {
-                        Editable = false;
-                        Visible = not Rec.Available;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the expected release month when the target version is unreleased.';
-                    }
-                    field("Expected Year"; Rec."Expected Year")
-                    {
-                        Editable = false;
-                        Visible = not Rec.Available;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the expected release year when the target version is unreleased.';
-                    }
-                    field(Result; Rec.Result)
-                    {
-                        Editable = false;
-                        StyleExpr = ResultStyleExpr;
-                        ToolTip = 'Specifies the current result state for this environment.';
-                    }
-                    field(Reason; Rec.Reason)
-                    {
-                        Editable = false;
-                        StyleExpr = RowStyleExpr;
-                        ToolTip = 'Specifies the reason this environment is Skipped or Failed, if any.';
-                    }
+                    trigger OnValidate()
+                    begin
+                        ValidateSelectedDate();
+                    end;
+                }
+                field("Latest Selectable Date"; Rec."Latest Selectable Date")
+                {
+                    Editable = false;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the latest date on which this environment can accept the target version.';
+                }
+                field("Expected Month"; Rec."Expected Month")
+                {
+                    Editable = false;
+                    Visible = not Rec.Available;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the expected release month when the target version is unreleased.';
+                }
+                field("Expected Year"; Rec."Expected Year")
+                {
+                    Editable = false;
+                    Visible = not Rec.Available;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the expected release year when the target version is unreleased.';
+                }
+                field(Result; Rec.Result)
+                {
+                    Editable = false;
+                    StyleExpr = ResultStyleExpr;
+                    ToolTip = 'Specifies the current result state for this environment.';
+                }
+                field(Reason; Rec.Reason)
+                {
+                    Editable = false;
+                    StyleExpr = RowStyleExpr;
+                    ToolTip = 'Specifies the reason this environment is Skipped or Failed, if any.';
                 }
             }
         }
@@ -121,17 +109,46 @@ page 62032 "D4P Bulk Reschedule Dialog"
 
     actions
     {
-        area(SystemActions)
+        area(Processing)
         {
-            systemaction(OK)
+            action(OK)
             {
+                ApplicationArea = All;
                 Caption = 'OK';
+                Image = Approve;
+                InFooterBar = true;
                 ToolTip = 'Accept the plan and apply the reschedule to the listed environments.';
+
+                trigger OnAction()
+                begin
+                    Accepted := true;
+                    CurrPage.Close();
+                end;
             }
-            systemaction(Cancel)
+            action(CancelAction)
             {
+                ApplicationArea = All;
                 Caption = 'Cancel';
+                Image = Cancel;
+                InFooterBar = true;
                 ToolTip = 'Discard the plan and exit without applying any reschedule.';
+
+                trigger OnAction()
+                begin
+                    Accepted := false;
+                    CurrPage.Close();
+                end;
+            }
+        }
+        area(Promoted)
+        {
+            group(Category_Process)
+            {
+                Caption = 'Process';
+
+                actionref(OKPromoted; OK)
+                {
+                }
             }
         }
     }
@@ -143,6 +160,7 @@ page 62032 "D4P Bulk Reschedule Dialog"
         // the dialog prefers a parse-of-cached-JSON over a re-fetch. Missing keys fall back
         // to a live fetch (e.g. a row that originated as a fetch failure never hit the cache).
         FetchCache: Dictionary of [Text, Text];
+        Accepted: Boolean;
         RowEditable: Boolean;
         RowStyleExpr: Text;
         ResultStyleExpr: Text;
@@ -176,7 +194,7 @@ page 62032 "D4P Bulk Reschedule Dialog"
 
     /// <summary>
     /// Copy the page's (possibly user-edited) plan rows back into the caller's temp record.
-    /// Called after RunModal when RunModal() returned Action::OK.
+    /// Called after RunModal when WasAccepted() is true.
     /// </summary>
     procedure GetData(var TempTargetPlan: Record "D4P BC Reschedule Plan Line" temporary)
     begin
@@ -189,6 +207,15 @@ page 62032 "D4P Bulk Reschedule Dialog"
                 TempTargetPlan := Rec;
                 TempTargetPlan.Insert(false);
             until Rec.Next() = 0;
+    end;
+
+    /// <summary>
+    /// Returns true if the user clicked OK (accepted the plan). Callers check this
+    /// after RunModal instead of Action::OK because PageType = List exposes neither.
+    /// </summary>
+    procedure WasAccepted(): Boolean
+    begin
+        exit(Accepted);
     end;
 
     local procedure UpdateRowState()
