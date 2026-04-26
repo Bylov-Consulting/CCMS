@@ -85,8 +85,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         // turns a click-on-AssistEdit from a second API round-trip into a dictionary lookup.
         GetFetchCache(DialogFetchCache);
         BulkDialog.SetFetchCache(DialogFetchCache);
-        BulkDialog.RunModal();
-        if not BulkDialog.WasAccepted() then
+        if BulkDialog.RunModal() <> Action::OK then
             exit;
 
         BulkDialog.GetData(TempPlan);
