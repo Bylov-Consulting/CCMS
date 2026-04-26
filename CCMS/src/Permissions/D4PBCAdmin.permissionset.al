@@ -40,6 +40,7 @@ permissionset 62000 "D4P BC ADMIN"
         tabledata "D4P BC Admin Center Cue" = RIMD,
         tabledata "D4P PTE Object Range" = RIMD,
         tabledata "D4P BC Environment Operation" = RIMD,
+        tabledata "D4P BC Reschedule Plan Line" = IMD,
 
         // Table Objects
         table "D4P BC Customer" = X,
@@ -62,6 +63,7 @@ permissionset 62000 "D4P BC ADMIN"
         table "D4P BC Admin Center Cue" = X,
         table "D4P PTE Object Range" = X,
         table "D4P BC Environment Operation" = X,
+        table "D4P BC Reschedule Plan Line" = X,
 
         // Pages
         page "D4P BC Customers List" = X,
@@ -98,6 +100,8 @@ permissionset 62000 "D4P BC ADMIN"
         page "D4P BC Customer FactBox" = X,
         page "D4P BC Admin Headline" = X,
         page "D4P BC Capacity List" = X,
+        page "D4P Bulk Reschedule Dialog" = X,
+        page "D4P Bulk Reschedule Summary" = X,
 
         // Codeunits
         codeunit "D4P BC Environment Mgt" = X,
@@ -108,6 +112,9 @@ permissionset 62000 "D4P BC ADMIN"
         codeunit "D4P KQL Query Store Init" = X,
         codeunit "D4P Telemetry Helper" = X,
         codeunit "D4P BC Operations Helper" = X,
+        codeunit "D4P BC Admin API" = X,
+        codeunit "D4P BC Bulk Reschedule Mgt" = X,
+        codeunit "D4P BC Update Parser" = X,
 
         // Reports
         report "D4P Load Data" = X,

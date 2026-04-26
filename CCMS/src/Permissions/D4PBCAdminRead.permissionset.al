@@ -37,6 +37,7 @@ permissionset 62001 "D4P BC ADMIN READ"
         tabledata "D4P AppInsights Connection" = R,
         tabledata "D4P PTE Object Range" = R,
         tabledata "D4P BC Environment Operation" = R,
+        tabledata "D4P BC Reschedule Plan Line" = R,
 
         // Table Objects
         table "D4P BC Customer" = X,
@@ -57,6 +58,7 @@ permissionset 62001 "D4P BC ADMIN READ"
         table "D4P AppInsights Connection" = X,
         table "D4P PTE Object Range" = X,
         table "D4P BC Environment Operation" = X,
+        table "D4P BC Reschedule Plan Line" = X,
 
         // Pages - List and Card pages for viewing
         page "D4P BC Customers List" = X,

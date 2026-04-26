@@ -280,6 +280,21 @@ page 62003 "D4P BC Environment List"
                         RenameEnvironmentDialog.RenameEnvironment();
                 end;
             }
+            action(BulkRescheduleUpdate)
+            {
+                Caption = 'Bulk Reschedule Updates';
+                Image = Timesheet;
+                ToolTip = 'Reschedule updates for multiple selected environments.';
+                trigger OnAction()
+                var
+                    Environment: Record "D4P BC Environment";
+                    Orchestrator: Codeunit "D4P BC Bulk Reschedule Mgt";
+                begin
+                    CurrPage.SetSelectionFilter(Environment);
+                    Orchestrator.RunBulkReschedule(Environment);
+                    CurrPage.Update(false);
+                end;
+            }
             action(DeleteAllFetched)
             {
                 Caption = 'Delete Selected';
@@ -467,6 +482,9 @@ page 62003 "D4P BC Environment List"
                 {
                 }
                 actionref(RenameEnvironmentPromoted; RenameEnvironment)
+                {
+                }
+                actionref(BulkRescheduleUpdatePromoted; BulkRescheduleUpdate)
                 {
                 }
             }

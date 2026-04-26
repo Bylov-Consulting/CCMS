@@ -362,6 +362,7 @@ page 62004 "D4P BC Environment Card"
                     EnvironmentManagement: Codeunit "D4P BC Environment Mgt";
                     UpdateSelectionDialog: Page "D4P Update Selection Dialog";
                     SelectedDate: Date;
+                    LatestSelectableDate: Date;
                     ExpectedMonth: Integer;
                     ExpectedYear: Integer;
                     NoUpdatesAvailableErr: Label 'No updates available for the environment %1.', Comment = '%1 = Environment Name';
@@ -376,7 +377,7 @@ page 62004 "D4P BC Environment Card"
                     // Pass data to selection dialog and show it
                     UpdateSelectionDialog.SetData(TempAvailableUpdate);
                     if UpdateSelectionDialog.RunModal() = Action::OK then begin
-                        UpdateSelectionDialog.GetSelectedVersion(TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear);
+                        UpdateSelectionDialog.GetSelectedVersion(TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear, LatestSelectableDate);
                         EnvironmentManagement.SelectTargetVersion(Rec, TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear);
                         CurrPage.Update(false);
                     end;

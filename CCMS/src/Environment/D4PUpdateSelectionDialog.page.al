@@ -164,12 +164,13 @@ page 62025 "D4P Update Selection Dialog"
         end;
     end;
 
-    procedure GetSelectedVersion(var TargetVersion: Text[100]; var SelectedDate: Date; var ExpectedMonth: Integer; var ExpectedYear: Integer)
+    procedure GetSelectedVersion(var TargetVersion: Text[100]; var SelectedDate: Date; var ExpectedMonth: Integer; var ExpectedYear: Integer; var LatestSelectableDate: Date)
     begin
         TargetVersion := Rec."Target Version";
         SelectedDate := Rec."User Selected Date";
         ExpectedMonth := Rec."Expected Month";
         ExpectedYear := Rec."Expected Year";
+        LatestSelectableDate := Rec."Latest Selectable Date";
     end;
 
     procedure SetData(var TempSourceUpdate: Record "D4P BC Available Update" temporary)
