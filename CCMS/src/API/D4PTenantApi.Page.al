@@ -52,10 +52,6 @@ page 62067 "D4P Tenant API"
                 {
                     Caption = 'Secret Expiration Date';
                 }
-                field(backupSasUri; Rec."Backup SAS URI")
-                {
-                    Caption = 'Backup SAS URI';
-                }
                 field(backupContainerName; Rec."Backup Container Name")
                 {
                     Caption = 'Backup Container Name';

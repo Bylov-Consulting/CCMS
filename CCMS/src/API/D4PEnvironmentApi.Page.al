@@ -200,16 +200,21 @@ page 62050 "D4P Environment API"
     /// <summary>
     /// Safe discovery: fetches the available target versions for the bound environment
     /// so a caller can pick a valid version before scheduleUpdate. No confirmation
-    /// required. Re-read the environment (Target Version / Available) for the result.
+    /// required. Returns a JSON array of the available target versions directly to the
+    /// caller (the version list).
+    ///
+    /// Implemented as a returning bound OData Function (non-void return, NO
+    /// WebServiceActionContext parameter). A [ServiceEnabled] procedure that has BOTH a
+    /// non-void return AND a var ActionContext: WebServiceActionContext parameter is
+    /// silently dropped from $metadata, so this deliberately omits ActionContext and
+    /// returns the JSON text instead of an environment ref.
     /// </summary>
     [ServiceEnabled]
-    procedure ListAvailableUpdates(var ActionContext: WebServiceActionContext)
+    procedure ListAvailableUpdates(): Text
     var
         EnvironmentMgt: Codeunit "D4P BC Environment Mgt";
     begin
-        EnvironmentMgt.ListAvailableUpdates(Rec);
-
-        SetEnvironmentActionResult(ActionContext);
+        exit(EnvironmentMgt.ListAvailableUpdates(Rec));
     end;
 
     /// <summary>

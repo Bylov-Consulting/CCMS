@@ -40,9 +40,6 @@ permissionset 62004 "D4P CCMS API"
         // Tabledata - Environment needs Modify (scheduleUpdate / GetEnvironmentUpdates) (RM)
         tabledata "D4P BC Environment" = RM,
 
-        // Tabledata - temp table populated by listAvailableUpdates
-        tabledata "D4P BC Available Update" = RIMD,
-
         // Tabledata - writable entities (RIMD)
         tabledata "D4P BC Customer" = RIMD,
         tabledata "D4P BC Tenant" = RIMD,

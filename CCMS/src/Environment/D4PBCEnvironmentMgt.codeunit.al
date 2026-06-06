@@ -813,12 +813,23 @@ codeunit 62000 "D4P BC Environment Mgt"
     procedure ListAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"): Text
     var
         TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+    begin
+        GetAvailableUpdates(BCEnvironment, TempAvailableUpdate);
+        exit(SerializeAvailableUpdates(TempAvailableUpdate));
+    end;
+
+    /// <summary>
+    /// Pure serializer: turns the temporary "D4P BC Available Update" rows into the JSON
+    /// text array exposed by listAvailableUpdates. Extracted from ListAvailableUpdates so
+    /// the serialization can be unit-tested without the admin-API GetAvailableUpdates HTTP
+    /// call. ListAvailableUpdates fetches then delegates here, so behavior is unchanged.
+    /// </summary>
+    procedure SerializeAvailableUpdates(var TempAvailableUpdate: Record "D4P BC Available Update" temporary): Text
+    var
         JsonArray: JsonArray;
         JsonObject: JsonObject;
         ResultText: Text;
     begin
-        GetAvailableUpdates(BCEnvironment, TempAvailableUpdate);
-
         TempAvailableUpdate.Reset();
         if TempAvailableUpdate.FindSet() then
             repeat
