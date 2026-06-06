@@ -1,0 +1,58 @@
+{
+  "id": "b1f7c3a4-2d6e-4e9a-9c1b-7a4e5d8f0c21",
+  "name": "Cloud Customer Management Solution.Test",
+  "publisher": "Directions for partners",
+  "version": "1.5.0.0",
+  "brief": "Test suite for Cloud Customer Management Solution",
+  "description": "Automated tests for CCMS admin-API helpers, action-plane wrappers, and operation parsing.",
+  "privacyStatement": "",
+  "EULA": "",
+  "help": "",
+  "url": "",
+  "logo": "",
+  "dependencies": [
+    {
+      "id": "e33746ef-a796-46ca-8a1a-fb3840a42c48",
+      "name": "Cloud Customer Management Solution",
+      "publisher": "Directions for partners",
+      "version": "1.4.0.0"
+    },
+    {
+      "id": "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+      "name": "Library Assert",
+      "publisher": "Microsoft",
+      "version": "27.0.0.0"
+    },
+    {
+      "id": "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
+      "name": "Any",
+      "publisher": "Microsoft",
+      "version": "27.0.0.0"
+    },
+    {
+      "id": "5d86850b-0d76-4eca-bd7b-951ad998e997",
+      "name": "Tests-TestLibraries",
+      "publisher": "Microsoft",
+      "version": "27.0.0.0"
+    }
+  ],
+  "screenshots": [],
+  "platform": "27.0.0.0",
+  "application": "27.0.0.0",
+  "runtime": "16.0",
+  "idRanges": [
+    {
+      "from": 50000,
+      "to": 50099
+    }
+  ],
+  "features": [
+    "NoImplicitWith",
+    "TranslationFile"
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": false,
+    "includeSourceInSymbolFile": false
+  }
+}
