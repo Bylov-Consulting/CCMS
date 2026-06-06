@@ -24,11 +24,25 @@ codeunit 62004 "D4P BC Admin API Response"
     /// <param name="ResponseBody">Raw admin-API response body (JSON).</param>
     /// <returns>The operation id as text, or '' when none is present.</returns>
     procedure TryGetOperationId(ResponseBody: Text): Text
+    var
+        JObject: JsonObject;
+        JToken: JsonToken;
     begin
-        // RED-phase stub: not yet implemented. Returns '' so the app compiles
-        // while the operationId-extraction test fails (proving the behaviour is
-        // not yet present). The GREEN phase parses ResponseBody and returns the
-        // root "id" property.
-        exit('');
+        // Mirrors the JSON idiom in "D4P BC Operations Helper".GetJsonText: read the
+        // root "id" property as a text value. Returns '' when the body is not JSON,
+        // the property is absent, or it is not a (non-null) value.
+        if not JObject.ReadFrom(ResponseBody) then
+            exit('');
+
+        if not JObject.Get('id', JToken) then
+            exit('');
+
+        if not JToken.IsValue() then
+            exit('');
+
+        if JToken.AsValue().IsNull() then
+            exit('');
+
+        exit(JToken.AsValue().AsText());
     end;
 }
