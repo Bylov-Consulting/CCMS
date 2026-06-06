@@ -11,14 +11,47 @@ codeunit 62015 "D4P BC Backup Helper"
     procedure StartEnvironmentDatabaseExport(var BCEnvironment: Record "D4P BC Environment")
     var
         BCTenant: Record "D4P BC Tenant";
-        JsonObject: JsonObject;
         ConfirmMsg: Label 'You are about to start a database export with the following settings:\\ Environment: %1\ Container: %2\ Blob File: %3\\These settings CANNOT be changed after the export starts.\\Do you want to continue?', Comment = '%1 = Environment Name, %2 = Container Name, %3 = Blob Name';
+        NotProductionUiErr: Label 'Database exports can only be created from Production environments.\ Environment "%1" is of type "%2".\ Please select a Production environment to perform a database export.', Comment = '%1 = Environment Name, %2 = Environment Type';
+        BlobName: Text;
+    begin
+        // Backward-compatible UI entry point. Keeps the interactive confirmation for the
+        // client, then delegates to the GUI-free overload (which re-validates the
+        // Production-only + SAS/Container guards and performs the export).
+        // Validate environment is Production (mirror the guard so we can build BlobName for the prompt)
+        if BCEnvironment.Type <> 'Production' then
+            Error(NotProductionUiErr, BCEnvironment.Name, BCEnvironment.Type);
+
+        BCTenant.Get(BCEnvironment."Customer No.", BCEnvironment."Tenant ID");
+
+        // Build the same blob name the overload will use, so the confirmation shows it.
+        BlobName := GenerateBlobName(BCEnvironment.Name);
+
+        if GuiAllowed() then
+            if not Confirm(ConfirmMsg, false, BCEnvironment.Name, BCTenant."Backup Container Name", BlobName) then
+                exit;
+
+        StartEnvironmentDatabaseExport(BCEnvironment, BlobName);
+    end;
+
+    /// <summary>
+    /// GUI-free overload of StartEnvironmentDatabaseExport. Removes the interactive
+    /// Confirm() (the API caller's own confirm gate is enforced on the page action),
+    /// retains the Production-only + SAS/Container configuration guards, guards the
+    /// success Message() behind GuiAllowed(), and returns the started info: the blob
+    /// name the export was written to (admin export start returns no operation id body,
+    /// so the blob name is the durable handle for refreshExportHistory/getExportMetrics).
+    /// </summary>
+    /// <param name="BlobName">Optional pre-computed blob name; pass '' to generate one.</param>
+    procedure StartEnvironmentDatabaseExport(var BCEnvironment: Record "D4P BC Environment"; BlobName: Text) StartedBlob: Text
+    var
+        BCTenant: Record "D4P BC Tenant";
+        JsonObject: JsonObject;
         ExportStartedMsg: Label 'Database export for environment %1 successfully started.\Blob: %2', Comment = '%1 = Environment Name, %2 = Blob Name';
         FailedExportErr: Label 'Failed to start database export: %1', Comment = '%1 = Error message';
         NoContainerErr: Label 'Backup Container Name is not configured for this tenant. Please configure it in the tenant settings before starting a database export.';
         NoSASURIErr: Label 'Backup SAS URI is not configured for this tenant. Please configure it in the tenant settings before starting a database export.';
         NotProductionErr: Label 'Database exports can only be created from Production environments.\ Environment "%1" is of type "%2".\ Please select a Production environment to perform a database export.', Comment = '%1 = Environment Name, %2 = Environment Type';
-        BlobName: Text;
         ResponseText: Text;
     begin
         // Validate environment is Production
@@ -34,12 +67,13 @@ codeunit 62015 "D4P BC Backup Helper"
         if BCTenant."Backup Container Name" = '' then
             Error(NoContainerErr);
 
-        // Generate blob name with timestamp
-        BlobName := StrSubstNo('%1_%2.bacpac', BCEnvironment.Name, Format(CurrentDateTime(), 0, '<Year4><Month,2><Day,2>_<Hours24><Minutes,2><Seconds,2>'));
+        // Generate blob name with timestamp when the caller did not supply one
+        if BlobName = '' then
+            BlobName := GenerateBlobName(BCEnvironment.Name);
 
-        // Show confirmation with storage details
-        if not Confirm(ConfirmMsg, false, BCEnvironment.Name, BCTenant."Backup Container Name", BlobName) then
-            exit;
+        // NOTE: the interactive Confirm() that previously lived here has been removed for
+        // the GUI-free path. The destructive/billable guard is now the API action's
+        // required `Confirm` parameter; the UI overload still confirms before delegating.
 
         // Create JSON request body
         JsonObject.Add('storageAccountSasUri', BCTenant."Backup SAS URI");
@@ -52,7 +86,15 @@ codeunit 62015 "D4P BC Backup Helper"
             Format(JsonObject), ResponseText) then
             Error(FailedExportErr, ResponseText);
 
-        Message(ExportStartedMsg, BCEnvironment.Name, BlobName);
+        if GuiAllowed() then
+            Message(ExportStartedMsg, BCEnvironment.Name, BlobName);
+
+        StartedBlob := BlobName;
+    end;
+
+    local procedure GenerateBlobName(EnvironmentName: Text): Text
+    begin
+        exit(StrSubstNo('%1_%2.bacpac', EnvironmentName, Format(CurrentDateTime(), 0, '<Year4><Month,2><Day,2>_<Hours24><Minutes,2><Seconds,2>')));
     end;
 
     procedure GetExportMetrics(var BCEnvironment: Record "D4P BC Environment")

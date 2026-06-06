@@ -98,4 +98,50 @@ page 62052 "D4P Environment Feature API"
             }
         }
     }
+
+    /// <summary>
+    /// DESTRUCTIVE (one-way for many features): activates the bound feature on its
+    /// environment. Gated behind Confirm=true. UpdateInBackground defaults to true and
+    /// StartDateTime to now. Re-read the feature entity (Is Enabled) for the result.
+    /// </summary>
+    [ServiceEnabled]
+    procedure ActivateFeature(Confirm: Boolean; var ActionContext: WebServiceActionContext)
+    var
+        FeaturesHelper: Codeunit "D4P BC Features Helper";
+        ConfirmRequiredErr: Label 'Activating a feature can be irreversible (one-way). This action is gated. Re-send with Confirm = true to proceed.';
+    begin
+        if not Confirm then
+            Error(ConfirmRequiredErr);
+
+        // SkipDialog=true => GUI-free.
+        FeaturesHelper.ActivateFeature(Rec, true, CurrentDateTime(), true);
+
+        SetFeatureActionResult(ActionContext);
+    end;
+
+    /// <summary>
+    /// DESTRUCTIVE: deactivates the bound feature on its environment.
+    /// Gated behind Confirm=true. Re-read the feature entity (Is Enabled) for the result.
+    /// </summary>
+    [ServiceEnabled]
+    procedure DeactivateFeature(Confirm: Boolean; var ActionContext: WebServiceActionContext)
+    var
+        FeaturesHelper: Codeunit "D4P BC Features Helper";
+        ConfirmRequiredErr: Label 'Deactivating a feature changes a real environment. This action is gated. Re-send with Confirm = true to proceed.';
+    begin
+        if not Confirm then
+            Error(ConfirmRequiredErr);
+
+        FeaturesHelper.DeactivateFeature(Rec);
+
+        SetFeatureActionResult(ActionContext);
+    end;
+
+    local procedure SetFeatureActionResult(var ActionContext: WebServiceActionContext)
+    begin
+        ActionContext.SetObjectType(ObjectType::Page);
+        ActionContext.SetObjectId(Page::"D4P Environment Feature API");
+        ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
+        ActionContext.SetResultCode(WebServiceActionResultCode::Get);
+    end;
 }

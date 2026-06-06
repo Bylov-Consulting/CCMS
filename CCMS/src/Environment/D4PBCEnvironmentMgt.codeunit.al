@@ -524,9 +524,25 @@ codeunit 62000 "D4P BC Environment Mgt"
     end;
 
     procedure UpdateApp(var BCEnvironment: Record "D4P BC Environment"; AppId: Guid; showNotification: Boolean)
+    begin
+        // Backward-compatible UI entry point: delegates to the GUI-free overload
+        // (SkipDialog=false) so the existing notification/message still surfaces in the
+        // client; the returned operation id is discarded for the UI caller.
+        UpdateApp(BCEnvironment, AppId, showNotification, false);
+    end;
+
+    /// <summary>
+    /// GUI-free overload of UpdateApp that returns the cloud operation id.
+    /// Performs the same POST /apps/{id}/update admin call, guards the success
+    /// Message()/Notification behind GuiAllowed() (and SkipDialog), parses the admin
+    /// response body via "D4P BC Admin API Response".TryGetOperationId, and returns the
+    /// operation id text ('' when the body carries none).
+    /// </summary>
+    procedure UpdateApp(var BCEnvironment: Record "D4P BC Environment"; AppId: Guid; showNotification: Boolean; SkipDialog: Boolean) OperationId: Text
     var
         InstalledApp: Record "D4P BC Installed App";
         BCTenant: Record "D4P BC Tenant";
+        AdminResponse: Codeunit "D4P BC Admin API Response";
         AppUpdateNotification: Notification;
         JsonObject: JsonObject;
         AppNotFoundErr: Label 'App not found';
@@ -553,11 +569,15 @@ codeunit 62000 "D4P BC Environment Mgt"
             Format(JsonObject), ResponseText) then
             Error(FailedToUpdateErr, ResponseText);
 
-        if showNotification then begin
-            AppUpdateNotification.Message := StrSubstNo(AppUpdateScheduledMsg, InstalledApp."App Name", InstalledApp."Available Update Version");
-            AppUpdateNotification.Send();
-        end else
-            Message(AppUpdateScheduledMsg, InstalledApp."App Name", InstalledApp."Available Update Version");
+        if not SkipDialog and GuiAllowed() then
+            if showNotification then begin
+                AppUpdateNotification.Message := StrSubstNo(AppUpdateScheduledMsg, InstalledApp."App Name", InstalledApp."Available Update Version");
+                AppUpdateNotification.Send();
+            end else
+                Message(AppUpdateScheduledMsg, InstalledApp."App Name", InstalledApp."Available Update Version");
+
+        // Parse + return the cloud operation id (HTTP 202 EnvironmentOperation body).
+        OperationId := AdminResponse.TryGetOperationId(ResponseText);
     end;
 
     procedure CreateNewBCEnvironment(var BCTenant: Record "D4P BC Tenant"; EnvironmentName: Text[100]; Localization: Code[2]; EnvironmentType: Enum "D4P Environment Type")
@@ -782,10 +802,65 @@ codeunit 62000 "D4P BC Environment Mgt"
         end;
     end;
 
+    /// <summary>
+    /// Runs GetAvailableUpdates (which fills the temporary "D4P BC Available Update"
+    /// table from the admin API) and serializes the rows to a JSON text array so an API
+    /// caller can discover valid target versions before scheduling an update. Each array
+    /// element carries targetVersion + availability/selection/scheduling fields. The
+    /// progress Dialog inside GetAvailableUpdates is a no-op when GUI is unavailable
+    /// (web-service context), so this is safe to call from an API action.
+    /// </summary>
+    procedure ListAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"): Text
+    var
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        JsonArray: JsonArray;
+        JsonObject: JsonObject;
+        ResultText: Text;
+    begin
+        GetAvailableUpdates(BCEnvironment, TempAvailableUpdate);
+
+        TempAvailableUpdate.Reset();
+        if TempAvailableUpdate.FindSet() then
+            repeat
+                Clear(JsonObject);
+                JsonObject.Add('entryNo', TempAvailableUpdate."Entry No.");
+                JsonObject.Add('targetVersion', TempAvailableUpdate."Target Version");
+                JsonObject.Add('targetVersionType', TempAvailableUpdate."Target Version Type");
+                JsonObject.Add('available', TempAvailableUpdate.Available);
+                JsonObject.Add('selected', TempAvailableUpdate.Selected);
+                JsonObject.Add('latestSelectableDate', Format(TempAvailableUpdate."Latest Selectable Date", 0, 9));
+                JsonObject.Add('selectedDate', Format(TempAvailableUpdate."Selected DateTime", 0, 9));
+                JsonObject.Add('ignoreUpdateWindow', TempAvailableUpdate."Ignore Update Window");
+                JsonObject.Add('rolloutStatus', TempAvailableUpdate."Rollout Status");
+                JsonObject.Add('expectedMonth', TempAvailableUpdate."Expected Month");
+                JsonObject.Add('expectedYear', TempAvailableUpdate."Expected Year");
+                JsonArray.Add(JsonObject);
+            until TempAvailableUpdate.Next() = 0;
+
+        JsonArray.WriteTo(ResultText);
+        exit(ResultText);
+    end;
+
     procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer)
+    begin
+        // Backward-compatible UI entry point: delegates to the GUI-free overload with
+        // SkipDialog=false so the original UI confirmation messages still surface; the
+        // returned operation id is discarded for the UI caller.
+        SelectTargetVersion(BCEnvironment, TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear, false);
+    end;
+
+    /// <summary>
+    /// GUI-free overload of SelectTargetVersion that returns the cloud operation id.
+    /// Performs the same PATCH /updates/{ver} admin call, guards all UI Message()
+    /// calls behind GuiAllowed(), parses the admin response body via
+    /// "D4P BC Admin API Response".TryGetOperationId, and returns the operation id text
+    /// ('' when the body carries none).
+    /// </summary>
+    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; SkipDialog: Boolean) OperationId: Text
     var
         BCSetup: Record "D4P BC Setup";
         BCTenant: Record "D4P BC Tenant";
+        AdminResponse: Codeunit "D4P BC Admin API Response";
         IsAvailable: Boolean;
         SelectedDateTime: DateTime;
         JsonObject: JsonObject;
@@ -818,7 +893,7 @@ codeunit 62000 "D4P BC Environment Mgt"
         JsonObject.WriteTo(RequestBody);
 
         // Debug mode: Show request body
-        if BCSetup."Debug Mode" then
+        if BCSetup."Debug Mode" and GuiAllowed() then
             Message('DEBUG - Select Target Version Request:\Target Version: %1\Request Body: %2', TargetVersion, RequestBody);
 
         // Call Admin API to select target version
@@ -827,7 +902,7 @@ codeunit 62000 "D4P BC Environment Mgt"
             Error(FailedToSelectErr, ResponseText);
 
         // Debug mode: Show API response
-        if BCSetup."Debug Mode" then
+        if BCSetup."Debug Mode" and GuiAllowed() then
             Message('DEBUG - Select Target Version Response:\%1', ResponseText);
 
         // Update environment record
@@ -835,13 +910,18 @@ codeunit 62000 "D4P BC Environment Mgt"
         if IsAvailable then begin
             BCEnvironment."Selected DateTime" := SelectedDateTime;
             BCEnvironment."Expected Availability" := '';
-            Message(UpdateScheduledMsg, TargetVersion, SelectedDate);
+            if not SkipDialog and GuiAllowed() then
+                Message(UpdateScheduledMsg, TargetVersion, SelectedDate);
         end else begin
             BCEnvironment."Selected DateTime" := 0DT;
             BCEnvironment."Expected Availability" := Format(ExpectedYear) + '/' + PadStr('', 2 - StrLen(Format(ExpectedMonth)), '0') + Format(ExpectedMonth);
-            Message(UpdateSelectedMsg, TargetVersion, ExpectedMonth, ExpectedYear);
+            if not SkipDialog and GuiAllowed() then
+                Message(UpdateSelectedMsg, TargetVersion, ExpectedMonth, ExpectedYear);
         end;
         BCEnvironment.Modify();
+
+        // Parse + return the cloud operation id (HTTP 202 EnvironmentOperation body).
+        OperationId := AdminResponse.TryGetOperationId(ResponseText);
     end;
 
     procedure RescheduleBCEnvironmentUpgrade(var BCTenant: Record "D4P BC Tenant"; EnvironmentName: Text[100]; TargetVersion: Text[100]; UpgradeDate: DateTime)
