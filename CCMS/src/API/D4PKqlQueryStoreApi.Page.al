@@ -43,6 +43,11 @@ page 62068 "D4P KQL Query Store API"
                 field(query; QueryText)
                 {
                     Caption = 'Query';
+
+                    trigger OnValidate()
+                    begin
+                        QueryProvided := true;
+                    end;
                 }
                 field(resultTableId; Rec."Result Table ID")
                 {
@@ -59,6 +64,7 @@ page 62068 "D4P KQL Query Store API"
 
     var
         QueryText: Text;
+        QueryProvided: Boolean;
 
     trigger OnAfterGetRecord()
     var
@@ -74,12 +80,20 @@ page 62068 "D4P KQL Query Store API"
 
     trigger OnInsertRecord(BelowxRec: Boolean): Boolean
     begin
-        WriteQueryBlob();
+        // Same guard as OnModifyRecord: only persist the Blob when `query` was supplied.
+        // A create without a query leaves the Blob empty, which is acceptable.
+        if QueryProvided then
+            WriteQueryBlob();
     end;
 
     trigger OnModifyRecord(): Boolean
     begin
-        WriteQueryBlob();
+        // Only overwrite the Query Blob when the caller actually supplied the `query`
+        // property in this PATCH. A PATCH that touches only other fields (e.g. name)
+        // leaves QueryText empty on this stateless page instance, so writing it would
+        // silently clear the stored query. The OnValidate flag tells us it was provided.
+        if QueryProvided then
+            WriteQueryBlob();
     end;
 
     local procedure WriteQueryBlob()

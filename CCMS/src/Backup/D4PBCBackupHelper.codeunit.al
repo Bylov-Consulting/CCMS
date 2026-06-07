@@ -13,11 +13,19 @@ codeunit 62015 "D4P BC Backup Helper"
         BCTenant: Record "D4P BC Tenant";
         ConfirmMsg: Label 'You are about to start a database export with the following settings:\\ Environment: %1\ Container: %2\ Blob File: %3\\These settings CANNOT be changed after the export starts.\\Do you want to continue?', Comment = '%1 = Environment Name, %2 = Container Name, %3 = Blob Name';
         NotProductionUiErr: Label 'Database exports can only be created from Production environments.\ Environment "%1" is of type "%2".\ Please select a Production environment to perform a database export.', Comment = '%1 = Environment Name, %2 = Environment Type';
+        NoGuiErr: Label 'This is the interactive entry point for starting a database export and requires a GUI to confirm. In a non-interactive (background/API) context, call StartEnvironmentDatabaseExport(BCEnvironment, BlobName) with your own explicit confirmation gate.';
         BlobName: Text;
     begin
         // Backward-compatible UI entry point. Keeps the interactive confirmation for the
         // client, then delegates to the GUI-free overload (which re-validates the
         // Production-only + SAS/Container guards and performs the export).
+
+        // Fail fast in a non-GUI context: this overload's whole purpose is the interactive
+        // confirm. Without a GUI it would silently proceed without one, so refuse and steer
+        // the caller to the GUI-free overload, which carries its own confirmation gate.
+        if not GuiAllowed() then
+            Error(NoGuiErr);
+
         // Validate environment is Production (mirror the guard so we can build BlobName for the prompt)
         if BCEnvironment.Type <> 'Production' then
             Error(NotProductionUiErr, BCEnvironment.Name, BCEnvironment.Type);
@@ -27,9 +35,9 @@ codeunit 62015 "D4P BC Backup Helper"
         // Build the same blob name the overload will use, so the confirmation shows it.
         BlobName := GenerateBlobName(BCEnvironment.Name);
 
-        if GuiAllowed() then
-            if not Confirm(ConfirmMsg, false, BCEnvironment.Name, BCTenant."Backup Container Name", BlobName) then
-                exit;
+        // GUI is guaranteed here (fail-fast guard above), so always confirm interactively.
+        if not Confirm(ConfirmMsg, false, BCEnvironment.Name, BCTenant."Backup Container Name", BlobName) then
+            exit;
 
         StartEnvironmentDatabaseExport(BCEnvironment, BlobName);
     end;
