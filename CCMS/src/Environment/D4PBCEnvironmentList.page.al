@@ -19,6 +19,7 @@ page 62003 "D4P BC Environment List"
     Editable = false;
     PageType = List;
     UsageCategory = Lists;
+    PopulateAllFields = true;
 
     layout
     {
