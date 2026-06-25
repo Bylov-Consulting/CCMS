@@ -1,8 +1,8 @@
-namespace D4P.CCMS.Connector;
+namespace D4P.CCMS.Connector.RestClientOAuth;
 
 using System.RestClient;
 
-codeunit 62033 D4PBCHttpClientHandler implements "Http Client Handler"
+codeunit 62033 "D4P Http Client Handler" implements "Http Client Handler"
 {
     Access = Internal;
     InherentEntitlements = X;

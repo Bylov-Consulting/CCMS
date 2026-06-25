@@ -11,7 +11,7 @@ codeunit 62037 D4PBCAutomationAPIClient
     InherentPermissions = X;
 
     var
-        AutomRestClientFactory: Codeunit D4PBCAutomRestClientFactory;
+        BCRestClientFactory: Codeunit D4PBCRestClientFactory;
         RestClient: Codeunit "Rest Client";
         CurrentTenantId: Guid;
         EnvironmentName: Text[100];
@@ -25,7 +25,7 @@ codeunit 62037 D4PBCAutomationAPIClient
 
         EnvironmentName := BCEnvironment.Name;
         CurrentTenantId := BCTenant."Tenant ID";
-        RestClient := AutomRestClientFactory.CreateRestClient(BCTenant, EnvironmentName);
+        RestClient := BCRestClientFactory.CreateRestClientForAutomationAPI(BCTenant, EnvironmentName);
         IsInitialized := true;
     end;
 

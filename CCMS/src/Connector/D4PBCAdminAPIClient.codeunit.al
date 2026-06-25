@@ -10,7 +10,7 @@ codeunit 62036 D4PBCAdminAPIClient
     InherentPermissions = X;
 
     var
-        AdminRestClientFactory: Codeunit D4PBCAdminRestClientFactory;
+        BCRestClientFactory: Codeunit D4PBCRestClientFactory;
         RestClient: Codeunit "Rest Client";
         CurrentTenantId: Guid;
         IsInitialized: Boolean;
@@ -21,7 +21,7 @@ codeunit 62036 D4PBCAdminAPIClient
         if IsInitialized and (CurrentTenantId = BCTenant."Tenant ID") then
             exit;
 
-        RestClient := AdminRestClientFactory.CreateRestClient(BCTenant);
+        RestClient := BCRestClientFactory.CreateRestClientForAdminAPI(BCTenant);
         CurrentTenantId := BCTenant."Tenant ID";
         IsInitialized := true;
     end;
