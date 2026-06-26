@@ -22,7 +22,7 @@ codeunit 62024 "D4P ClientCredentialsFlow Impl"
         OAuthConfidentialClient: Codeunit "D4P OAuth Confidential Client";
     begin
         if OAuthAuthenticationResult.IsValid() then
-            exit(OAuthAuthenticationResult.GetAuthorizationHeader);
+            exit(OAuthAuthenticationResult.GetAuthorizationHeader());
 
         OAuthAuthenticationResult := OAuthConfidentialClient.AcquireTokenForClient(OAuthAuthority, OAuthClientApplication);
         ReturnValue := OAuthAuthenticationResult.GetAuthorizationHeader();

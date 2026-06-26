@@ -73,6 +73,8 @@ table 62010 "D4P Entra Secret"
 
     procedure SetSecretText(SecretText: Text[215])
     begin
+        RemoveSecretText();
+        
         Rec."Isolated Storage Id" := CreateGuid();
         Rec.Modify();
 
