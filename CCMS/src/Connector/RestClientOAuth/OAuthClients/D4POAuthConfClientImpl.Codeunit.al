@@ -10,10 +10,10 @@ codeunit 62039 "D4P OAuth Conf. Client Impl."
 
     var
         RestClient: Codeunit "Rest Client";
-        RestClientInitialized: Boolean;
         Base64Convert: Codeunit "Base64 Convert";
         CryptographyManagement: Codeunit "Cryptography Management";
         TimeHelper: Codeunit "D4P Time Helper";
+        RestClientInitialized: Boolean;
 
     procedure AcquireTokenByAuthorizationCode(AuthorizationCode: SecretText; OAuthAuthority: Interface "D4P OAuth Authority"; OAuthClientApplication: Codeunit "D4P OAuth Appl. Config") AuthenticationResult: Codeunit "D4P OAuth Result"
     begin

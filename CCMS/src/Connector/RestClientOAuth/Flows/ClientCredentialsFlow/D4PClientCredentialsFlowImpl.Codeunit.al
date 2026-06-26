@@ -4,8 +4,8 @@ codeunit 62024 "D4P ClientCredentialsFlow Impl"
     Access = Internal;
 
     var
-        OAuthAuthority: Interface "D4P OAuth Authority";
         OAuthAuthenticationResult: Codeunit "D4P OAuth Result";
+        OAuthAuthority: Interface "D4P OAuth Authority";
 
     procedure SetAuthority(Value: Interface "D4P OAuth Authority")
     begin

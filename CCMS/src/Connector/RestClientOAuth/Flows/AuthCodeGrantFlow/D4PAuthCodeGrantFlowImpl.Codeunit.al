@@ -9,7 +9,6 @@ codeunit 62022 "D4P Auth Code Grant Flow Impl."
     var
         OAuthAuthenticationResult: Codeunit "D4P OAuth Result";
         OAuthAuthority: Interface "D4P OAuth Authority";
-        AuthorizationCanceledMsg: Label 'The authorization was canceled.';
         PKCECodeVerifier: Text[128];
         OAuthClientType: Enum "D4P OAuth Client Type";
         PromptInteraction: Enum "Prompt Interaction";
