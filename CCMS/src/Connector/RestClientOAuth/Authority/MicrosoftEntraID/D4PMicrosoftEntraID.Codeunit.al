@@ -11,7 +11,7 @@ codeunit 62011 "D4P Microsoft Entra ID" implements "D4P OAuth Authority"
 
     procedure GetApplicationConfig(OAuthApplicationCode: Code[20]; ScopesList: List of [Text]) OAuthApplicationConfig: Codeunit "D4P OAuth Appl. Config"
     begin
-        OAuthApplicationConfig := MicrosoftEntraIDImpl.GetApplicationConfig(OAuthApplicationCode, ScopesList)
+        OAuthApplicationConfig := MicrosoftEntraIDImpl.GetApplicationConfig(OAuthApplicationCode, ScopesList);
     end;
 
     procedure GetAuthorizationEndpoint(OAuthClientApplication: Codeunit "D4P OAuth Appl. Config"): Text;

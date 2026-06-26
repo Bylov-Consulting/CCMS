@@ -107,7 +107,7 @@ table 62008 "D4P Entra Certificate"
             Rec.CalcFields(Certificate);
             Rec.Certificate.CreateInStream(InStream);
             InStream.ReadText(ReturnValue);
-        end
+        end;
     end;
 
     internal procedure DownloadCertificate()

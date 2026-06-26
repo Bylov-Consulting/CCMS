@@ -18,6 +18,6 @@ codeunit 62006 "D4P Http Auth. OAuth2" implements "Http Authentication"
 
     procedure GetAuthorizationHeaders() Headers: Dictionary of [Text, SecretText];
     begin
-        Headers := HttpAuthenticationOAuth2Impl.GetAuthorizationHeaders()
+        Headers := HttpAuthenticationOAuth2Impl.GetAuthorizationHeaders();
     end;
 }
