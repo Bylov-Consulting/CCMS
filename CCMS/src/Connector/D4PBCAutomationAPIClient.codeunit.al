@@ -16,7 +16,7 @@ codeunit 62037 D4PBCAutomationAPIClient
         CurrentTenantId: Guid;
         EnvironmentName: Text[100];
         IsInitialized: Boolean;
-        NotInitializedErr: Label 'Automation API Client is not initialized. Call SetTenant before making API requests.';
+        NotInitializedErr: Label 'Automation API Client is not initialized. Call SetContext before making API requests.';
 
     procedure SetContext(BCTenant: Record "D4P BC Tenant"; BCEnvironment: Record "D4P BC Environment")
     begin
