@@ -84,7 +84,7 @@ table 62010 "D4P Entra Secret"
 
     procedure RemoveSecretText()
     begin
-        if IsolatedStorage.Contains(Id, DataScope::Module) then
-            IsolatedStorage.Delete(Id, DataScope::Module);
+        if IsolatedStorage.Contains("Isolated Storage Id", DataScope::Module) then
+            IsolatedStorage.Delete("Isolated Storage Id", DataScope::Module);
     end;
 }

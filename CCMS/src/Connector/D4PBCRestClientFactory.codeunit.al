@@ -16,23 +16,19 @@ codeunit 62034 D4PBCRestClientFactory
     procedure CreateRestClientForAdminAPI(BCTenant: Record "D4P BC Tenant") RestClient: Codeunit "Rest Client"
     var
         BCSetup: Record "D4P BC Setup";
-        HttpClientHandler: Codeunit "D4P Http Client Handler";
     begin
         BCSetup := BCSetup.GetSetup();
         RestClient := GetRestClient(BCTenant, BCSetup."Debug Mode");
         RestClient.SetBaseAddress(BCSetup.GetAdminAPIBaseUrl());
-        exit(RestClient);
     end;
 
     procedure CreateRestClientForAutomationAPI(BCTenant: Record "D4P BC Tenant"; EnvironmentName: Text) RestClient: Codeunit "Rest Client"
     var
         BCSetup: Record "D4P BC Setup";
-        HttpClientHandler: Codeunit "D4P Http Client Handler";
     begin
         BCSetup := BCSetup.GetSetup();
         RestClient := GetRestClient(BCTenant, BCSetup."Debug Mode");
         RestClient.SetBaseAddress(BCSetup.GetAutomationAPIBaseUrl() + '/' + EnvironmentName);
-        exit(RestClient);
     end;
 
     local procedure GetRestClient(BCTenant: Record "D4P BC Tenant"; DebugMode: Boolean) RestClient: Codeunit "Rest Client"
