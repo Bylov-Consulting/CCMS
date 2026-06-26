@@ -134,6 +134,7 @@ codeunit 62039 "D4P OAuth Conf. Client Impl."
         InStream: InStream;
         JsonHeader, JsonClaims : JsonObject;
         JsonText, Thumbprint, SignatureBase64 : Text;
+        Now: DateTime;
     begin
         JsonHeader.Add('alg', 'RS256');
         JsonHeader.Add('typ', 'JWT');
@@ -141,13 +142,14 @@ codeunit 62039 "D4P OAuth Conf. Client Impl."
         JsonHeader.WriteTo(JsonText);
         Jwt := Base64UrlEncode(Base64Convert.ToBase64(JsonText));
 
+        Now := CurrentDateTime();
         JsonClaims.Add('aud', OAuthAuthority.GetTokenEndpoint());
-        JsonClaims.Add('exp', TimeHelper.GetEpochTimestamp(CreateDateTime(Today, Time + (5 * 60000))));
+        JsonClaims.Add('exp', TimeHelper.GetEpochTimestamp(Now + (5 * 60000)));
         JsonClaims.Add('iss', OAuthClientApplication.GetClientId());
         JsonClaims.Add('jti', Format(CreateGuid(), 0, 4).ToLower());
-        JsonClaims.Add('nbf', TimeHelper.GetEpochTimestamp(CreateDateTime(Today, Time - 60000)));
+        JsonClaims.Add('nbf', TimeHelper.GetEpochTimestamp(Now - 60000));
         JsonClaims.Add('sub', OAuthClientApplication.GetClientId());
-        JsonClaims.Add('iat', TimeHelper.GetEpochTimestamp(CreateDateTime(Today, Time)));
+        JsonClaims.Add('iat', TimeHelper.GetEpochTimestamp(Now));
         JsonClaims.WriteTo(JsonText);
         Jwt := Jwt + '.' + Base64UrlEncode(Base64Convert.ToBase64(JsonText));
 

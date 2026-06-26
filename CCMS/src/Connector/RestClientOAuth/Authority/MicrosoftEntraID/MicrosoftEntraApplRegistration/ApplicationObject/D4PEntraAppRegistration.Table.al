@@ -1,7 +1,7 @@
 namespace D4P.CCMS.Connector.RestClientOAuth;
 table 62007 "D4P Entra App Registration"
 {
-    Caption = 'Microsoft Entra App Registation';
+    Caption = 'Microsoft Entra App Registration';
     DataPerCompany = false;
     ReplicateData = false;
     LookupPageId = "D4P Entra App Registr. List";
