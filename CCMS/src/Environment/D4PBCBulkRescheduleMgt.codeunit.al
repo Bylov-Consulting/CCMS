@@ -45,7 +45,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     end;
 
     /// <summary>
-    /// Full flow: empty-selection guard, Confirm, BuildPlan -> user review via page 62032 ->
+    /// Full flow: empty-selection guard, Confirm, BuildPlan -> user review via page 62035 ->
     /// ApplyPlan -> ShowSummary (page 62033).
     /// </summary>
     procedure RunBulkReschedule(var BCEnvironment: Record "D4P BC Environment")
@@ -160,10 +160,15 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                 TempPlan.Result := TempPlan.Result::Skipped;
                 TempPlan.Reason := CopyStr(StrSubstNo(FetchFailedReasonLbl, FetchReason), 1, MaxStrLen(TempPlan.Reason));
             end else begin
-                // Cache the raw JSON under the env name so AssistEdit drilldowns can re-parse
-                // without another API hit. Populated regardless of whether the fetch returned
-                // rows — a legitimate empty payload is still a valid cache hit.
-                CacheRawResponse(BCEnvironment.Name, TempFetchRawResponse);
+                // Cache the raw JSON under the env's full composite key so AssistEdit drilldowns
+                // can re-parse without another API hit. Environments are keyed by (Customer No.,
+                // Tenant ID, Name), so the cache key must be composite too — keying on Name alone
+                // would collide across tenants/customers in a mixed multi-tenant selection.
+                // Populated regardless of whether the fetch returned rows — a legitimate empty
+                // payload is still a valid cache hit.
+                CacheRawResponse(
+                    FetchCacheKey(BCEnvironment."Customer No.", BCEnvironment."Tenant ID", BCEnvironment.Name),
+                    TempFetchRawResponse);
 
                 if TempFetchBuffer.IsEmpty() then begin
                     TempPlan.Result := TempPlan.Result::Skipped;
@@ -432,15 +437,26 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     end;
 
     /// <summary>
-    /// Stage a raw-JSON payload for an env into the per-run cache. Later handed to the
-    /// dialog via GetFetchCache so AssistEdit can re-parse without re-hitting the API.
+    /// Builds the composite cache key for an environment. Environments are keyed by
+    /// (Customer No., Tenant ID, Name); the dialog (page 62035) builds the SAME key when
+    /// reading the cache, so the format MUST stay in lockstep between the two objects.
     /// </summary>
-    local procedure CacheRawResponse(EnvName: Text; RawResponse: Text)
+    procedure FetchCacheKey(CustomerNo: Code[20]; TenantID: Guid; EnvName: Text): Text
     begin
-        if FetchCache.ContainsKey(EnvName) then
-            FetchCache.Set(EnvName, RawResponse)
+        exit(StrSubstNo('%1|%2|%3', CustomerNo, TenantID, EnvName));
+    end;
+
+    /// <summary>
+    /// Stage a raw-JSON payload for an env into the per-run cache, keyed by the composite
+    /// FetchCacheKey. Later handed to the dialog via GetFetchCache so AssistEdit can
+    /// re-parse without re-hitting the API.
+    /// </summary>
+    local procedure CacheRawResponse(CacheKey: Text; RawResponse: Text)
+    begin
+        if FetchCache.ContainsKey(CacheKey) then
+            FetchCache.Set(CacheKey, RawResponse)
         else
-            FetchCache.Add(EnvName, RawResponse);
+            FetchCache.Add(CacheKey, RawResponse);
     end;
 
     /// <summary>

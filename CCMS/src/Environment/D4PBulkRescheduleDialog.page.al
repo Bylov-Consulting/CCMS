@@ -12,7 +12,7 @@ namespace D4P.CCMS.Environment;
 /// The OK action is promoted to the ribbon so it is a big visible button
 /// without forcing users to open the Actions dropdown.
 /// </summary>
-page 62032 "D4P Bulk Reschedule Dialog"
+page 62035 "D4P Bulk Reschedule Dialog"
 {
     ApplicationArea = All;
     Caption = 'Bulk Reschedule Updates';
@@ -166,6 +166,7 @@ page 62032 "D4P Bulk Reschedule Dialog"
         RowStyleExpr: Text;
         ResultStyleExpr: Text;
         NoUpdatesAvailableErr: Label 'No updates are available for environment %1.', Comment = '%1 = Environment Name';
+        EnvMissingErr: Label 'Environment %1 no longer exists in the local database. Refresh the environment list and try again.', Comment = '%1 = Environment Name';
         DateTooEarlyErr: Label 'Selected date cannot be earlier than today.';
         DateTooLateErr: Label 'Selected date cannot be later than %1.', Comment = '%1 = Latest selectable date';
 
@@ -318,6 +319,7 @@ page 62032 "D4P Bulk Reschedule Dialog"
         BCEnv: Record "D4P BC Environment";
         TempAvailableUpdate: Record "D4P BC Available Update" temporary;
         Parser: Codeunit "D4P BC Update Parser";
+        BulkRescheduleMgt: Codeunit "D4P BC Bulk Reschedule Mgt";
         UpdateSelectionDialog: Page "D4P Update Selection Dialog";
         CachedJson: Text;
         RawResponse: Text;
@@ -331,10 +333,14 @@ page 62032 "D4P Bulk Reschedule Dialog"
             exit;
 
         // Cache-hit path: skip the API entirely and re-parse the JSON we already have.
+        // The cache is keyed by the env's full composite key (Customer No. + Tenant ID +
+        // Environment Name) — keying on Environment Name alone would collide across tenants
+        // in a mixed multi-tenant selection. Build the key via the orchestrator's helper so
+        // the format stays in lockstep with how the cache was populated during BuildPlan.
         // An empty cached JSON means "we fetched and got nothing" — treat that the same
         // as a live fetch that returned zero rows (Error below), rather than falling
         // through to a second API call.
-        if FetchCache.Get(Rec."Environment Name", CachedJson) then begin
+        if FetchCache.Get(BulkRescheduleMgt.FetchCacheKey(Rec."Customer No.", Rec."Tenant ID", Rec."Environment Name"), CachedJson) then begin
             if CachedJson <> '' then
                 Parser.ParseUpdatesJson(CachedJson, TempAvailableUpdate);
         end else begin
@@ -342,8 +348,12 @@ page 62032 "D4P Bulk Reschedule Dialog"
             // Application Family + Name are used by AdminAPI.GetAvailableUpdates to build
             // the endpoint path; the inner BCTenant.Get is narrowed separately.
             BCEnv.SetLoadFields("Customer No.", "Tenant ID", "Application Family", Name);
-            if not BCEnv.Get(Rec."Customer No.", Rec."Tenant ID", Rec."Environment Name") then
-                exit;
+            if not BCEnv.Get(Rec."Customer No.", Rec."Tenant ID", Rec."Environment Name") then begin
+                // The environment was deleted/renamed between BuildPlan and this drilldown.
+                // Previously this silently exited, leaving the partner staring at an AssistEdit
+                // that did nothing. Surface it so they know the row is stale.
+                Error(EnvMissingErr, Rec."Environment Name");
+            end;
 
             EnsureAdminAPI();
             AdminAPI.GetAvailableUpdates(BCEnv, TempAvailableUpdate, RawResponse);

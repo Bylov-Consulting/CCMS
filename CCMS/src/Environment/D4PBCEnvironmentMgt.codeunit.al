@@ -647,7 +647,11 @@ codeunit 62000 "D4P BC Environment Mgt"
         TempAvailableUpdate.Reset();
         TempAvailableUpdate.DeleteAll(false);
 
-        // Show progress dialog (card UX unchanged — plan §8 step 12)
+        // Show a single indeterminate progress dialog for the whole fetch+parse. NOTE: the
+        // earlier per-update "Processing update #N" dialog was intentionally dropped when JSON
+        // parsing moved to the pure D4P BC Update Parser codeunit (which does no UI). A per-row
+        // dialog would either be cosmetic theatre over already-parsed rows or would re-couple UI
+        // into the pure parser, so the card now shows one "Fetching available updates..." dialog.
         ProgressDialog.Open(FetchingUpdatesMsg);
 
         // Call Admin API to get available updates

@@ -151,6 +151,12 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
         ExpectedMonth: Integer;
         ExpectedYear: Integer;
     begin
+        // Mirror the real contract (ParseUpdatesJson clears at the top): callers reuse the
+        // same temp record across envs, so the mock must reset it before inserting fixtures
+        // rather than appending to whatever the previous env left behind.
+        TempAvailableUpdate.Reset();
+        TempAvailableUpdate.DeleteAll(false);
+
         if ThrowOnFetchEnvs.Contains(BCEnvironment.Name) then
             Error('Fetch failed: simulated HTTP error for environment %1', BCEnvironment.Name);
 
