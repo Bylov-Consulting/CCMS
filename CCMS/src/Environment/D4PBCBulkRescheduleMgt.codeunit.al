@@ -162,7 +162,11 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                     DefaultDate := 0D;
                     ExpectedMonth := 0;
                     ExpectedYear := 0;
-                    Parser.PickDefaultTargetVersion(TempFetchBuffer, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
+                    // The parser returns the winning candidate's REAL availability. We must use
+                    // that, not "a date exists": an available version can legitimately carry no
+                    // latestSelectableDate (0D), yet it is still Available and must apply via the
+                    // released/available branch downstream.
+                    AvailableFlag := Parser.PickDefaultTargetVersion(TempFetchBuffer, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
 
                     TempPlan."Target Version" := TargetVersion;
                     TempPlan."Selected Date" := DefaultDate;
@@ -170,8 +174,8 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                     TempPlan."Expected Month" := ExpectedMonth;
                     TempPlan."Expected Year" := ExpectedYear;
 
-                    // "Available" flips to true if we picked an available candidate (i.e. a Date was set).
-                    AvailableFlag := DefaultDate <> 0D;
+                    // "Available" reflects the candidate's real availability flag, decoupled from
+                    // whether a selectable date was returned.
                     TempPlan.Available := AvailableFlag;
                 end;
             end;
@@ -316,7 +320,8 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
             PlanLine."Target Version",
             PlanLine."Selected Date",
             PlanLine."Expected Month",
-            PlanLine."Expected Year");
+            PlanLine."Expected Year",
+            PlanLine.Available);
         if not Success then
             Error(APIFailureErr);
     end;

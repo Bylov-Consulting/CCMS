@@ -24,6 +24,9 @@ interface "D4P IBC Admin API"
     /// <param name="SelectedDate">The chosen date for the update.</param>
     /// <param name="ExpectedMonth">Expected release month (for unreleased versions).</param>
     /// <param name="ExpectedYear">Expected release year (for unreleased versions).</param>
+    /// <param name="IsAvailable">The candidate's real availability flag. Drives the released/available
+    /// vs unreleased request branch — decoupled from SelectedDate, because a genuinely available
+    /// version can carry no latestSelectableDate (0D).</param>
     /// <returns>true on success, false on failure.</returns>
-    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer): Boolean;
+    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean): Boolean;
 }

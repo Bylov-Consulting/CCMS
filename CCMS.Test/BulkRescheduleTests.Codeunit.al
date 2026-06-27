@@ -799,6 +799,7 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
     var
         BCEnv: Record "D4P BC Environment";
         TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        SelectCalls: List of [Text];
         CustNo: Code[20];
     begin
         // GIVEN an environment whose only update is genuinely available
@@ -832,6 +833,37 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         // <> 0D) it is wrongly false, so this FAILS in RED.
         Assert.IsTrue(TempPlan.Available,
             'A genuinely available update (available=true) must yield Available=true on the plan row even when the Admin API returned no latest-selectable-date (0D); the flag must reflect the candidate''s availability, not whether a date exists.');
+
+        // AND on apply, the request must take the AVAILABLE (released) branch for this env,
+        // chosen from the Available flag — NOT from SelectedDate <> 0D (the date is 0D here).
+        // Observable via the mock's recorded branch token. With the old code (IsAvailable :=
+        // SelectedDate <> 0D) this would log 'unreleased', so this assertion FAILS in RED.
+        TempPlan.Reset();
+        TempPlan.SetRange(Result, TempPlan.Result::Pending);
+        if TempPlan.FindSet(true) then
+            repeat
+                TempPlan."Target Version" := '27.5';
+                TempPlan.Modify();
+            until TempPlan.Next() = 0;
+
+        Orchestrator.ApplyPlan(TempPlan);
+
+        SelectCalls := MockAPI.GetSelectCalls();
+        Assert.AreEqual(1, SelectCalls.Count(),
+            'SelectTargetVersion must be called exactly once for the single AVAIL-NODATE env');
+        Assert.IsTrue(
+            StrPos(SelectCalls.Get(1), 'AVAIL-NODATE|27.5|') = 1,
+            StrSubstNo('Expected the apply call to target AVAIL-NODATE at 27.5, got: %1', SelectCalls.Get(1)));
+        Assert.IsTrue(
+            StrPos(SelectCalls.Get(1), '|available') > 0,
+            StrSubstNo('Apply must take the AVAILABLE branch for a genuinely available update even with no selectable date (0D); the branch must be driven by the Available flag, not SelectedDate. Got: %1', SelectCalls.Get(1)));
+
+        // The applied env's row must end Succeeded (mock returns true; no forced failure).
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'AVAIL-NODATE');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected AVAIL-NODATE row after apply');
+        Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result,
+            'AVAIL-NODATE must be Succeeded after apply');
     end;
 
     // -----------------------------------------------------------------------

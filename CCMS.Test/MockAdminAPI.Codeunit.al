@@ -196,11 +196,25 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
 
     /// <summary>
     /// Records the call and returns true unless ForceFailOn was called for this env.
+    /// The logged entry is "EnvName|TargetVersion|Date|Branch" where Branch is the
+    /// literal token 'available' or 'unreleased', derived from the IsAvailable flag the
+    /// orchestrator threaded in. Tests observe this to assert the apply path took the
+    /// correct branch independently of whether a selectable date was present.
     /// </summary>
-    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer): Boolean
+    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean): Boolean
     begin
-        SelectCallLog.Add(StrSubstNo('%1|%2|%3', BCEnvironment.Name, TargetVersion, SelectedDate));
+        SelectCallLog.Add(StrSubstNo('%1|%2|%3|%4', BCEnvironment.Name, TargetVersion, SelectedDate, BranchToken(IsAvailable)));
         exit(not FailOnEnvs.Contains(BCEnvironment.Name));
+    end;
+
+    /// <summary>
+    /// Maps the availability flag to a stable, locale-independent token for the call log.
+    /// </summary>
+    local procedure BranchToken(IsAvailable: Boolean): Text
+    begin
+        if IsAvailable then
+            exit('available');
+        exit('unreleased');
     end;
 
     // -----------------------------------------------------------------------

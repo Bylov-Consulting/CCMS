@@ -143,7 +143,11 @@ codeunit 62006 "D4P BC Update Parser"
     /// falls back to the most recent unreleased row (max Expected Year then Month) if
     /// none are available. Leaves out-params at their default values if the temp table is empty.
     /// </summary>
-    procedure PickDefaultTargetVersion(var TempAvailableUpdate: Record "D4P BC Available Update" temporary; var TargetVersion: Text[100]; var DefaultDate: Date; var ExpectedMonth: Integer; var ExpectedYear: Integer)
+    /// <returns>true if the winning candidate is a genuinely Available=true version,
+    /// false if it is an unreleased fallback (or the temp table was empty). This must drive
+    /// the plan row's Available flag — it is decoupled from whether a selectable date exists,
+    /// because an available version can legitimately carry no latestSelectableDate (0D).</returns>
+    procedure PickDefaultTargetVersion(var TempAvailableUpdate: Record "D4P BC Available Update" temporary; var TargetVersion: Text[100]; var DefaultDate: Date; var ExpectedMonth: Integer; var ExpectedYear: Integer) IsAvailable: Boolean
     var
         TempBestAvailable: Record "D4P BC Available Update" temporary;
         TempBestUnreleased: Record "D4P BC Available Update" temporary;
@@ -154,6 +158,7 @@ codeunit 62006 "D4P BC Update Parser"
         DefaultDate := 0D;
         ExpectedMonth := 0;
         ExpectedYear := 0;
+        IsAvailable := false;
 
         TempAvailableUpdate.Reset();
         if not TempAvailableUpdate.FindSet() then
@@ -169,6 +174,7 @@ codeunit 62006 "D4P BC Update Parser"
         if HasAvailable then begin
             TargetVersion := TempBestAvailable."Target Version";
             DefaultDate := TempBestAvailable."Latest Selectable Date";
+            IsAvailable := true;
             exit;
         end;
 

@@ -43,12 +43,11 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
     /// throwing) on HTTP failure so the orchestrator can record the reason and continue.
     /// Does NOT call Message() — the orchestrator owns all UX.
     /// </summary>
-    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer): Boolean
+    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean): Boolean
     var
         BCTenant: Record "D4P BC Tenant";
         JsonObject: JsonObject;
         JsonScheduleDetails: JsonObject;
-        IsAvailable: Boolean;
         SelectedDateTime: DateTime;
         Endpoint: Text;
         RequestBody: Text;
@@ -59,10 +58,10 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
         BCTenant.SetLoadFields("Tenant ID", "Client ID");
         BCTenant.Get(BCEnvironment."Customer No.", BCEnvironment."Tenant ID");
 
-        // A selectable Date distinguishes a released-and-schedulable version from an
-        // unreleased one where the caller only has Month/Year. Mirrors the single-env path.
-        IsAvailable := (SelectedDate <> 0D);
-
+        // IsAvailable (the candidate's real availability) distinguishes a released-and-
+        // schedulable version from an unreleased one where the caller only has Month/Year.
+        // It is NOT derived from SelectedDate, because a genuinely available version can carry
+        // no latestSelectableDate (0D) yet must still be scheduled via the released branch.
         JsonObject.Add('selected', true);
 
         if IsAvailable then begin
