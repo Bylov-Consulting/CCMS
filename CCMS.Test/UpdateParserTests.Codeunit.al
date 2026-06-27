@@ -374,6 +374,276 @@ codeunit 62102 "D4P Update Parser Tests"
             'Parser must return an empty result when the JSON response has no "value" key');
     end;
 
+    // -------------------------------------------------------------------------
+    // T-c(a) — All-unreleased: max Expected Year, then Month, then version wins
+    //
+    // Requirement: with no available candidates, PickDefaultTargetVersion must
+    // rank unreleased rows by Expected Year (primary), then Expected Month
+    // (secondary), then semantic version (tie-break). Four rows prove all three
+    // tiers in one scenario:
+    //   27.3  / 2026 / 9   ← winner (top year 2026; top month 9; loses on nothing)
+    //   27.10 / 2026 / 9   ← same year+month, HIGHER version → must beat 27.3
+    //   27.99 / 2025 / 12  ← higher month/version but LOWER year → excluded
+    //   27.50 / 2026 / 6   ← same year but LOWER month → excluded
+    // Winner must be 27.10 (2026/9): year excludes the 2025 row, month excludes
+    // the 2026/6 row, version breaks the 2026/9 tie. IsAvailable must be false and
+    // DefaultDate 0D (unreleased path carries no selectable date).
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure PickDefaultTargetVersion_AllUnreleased_RanksYearThenMonthThenVersion()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        TargetVersion: Text[100];
+        DefaultDate: Date;
+        ExpectedMonth: Integer;
+        ExpectedYear: Integer;
+        IsAvailable: Boolean;
+    begin
+        // Arrange — 4 unreleased rows (all Available = false), inserted unsorted.
+        InsertUnreleased(TempAvailableUpdate, 1, '27.3', 9, 2026);
+        InsertUnreleased(TempAvailableUpdate, 2, '27.10', 9, 2026);
+        InsertUnreleased(TempAvailableUpdate, 3, '27.99', 12, 2025);
+        InsertUnreleased(TempAvailableUpdate, 4, '27.50', 6, 2026);
+
+        // Act
+        IsAvailable := Parser.PickDefaultTargetVersion(
+            TempAvailableUpdate, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
+
+        // Assert — year-then-month-then-version ranking selects 27.10 (2026/9).
+        Assert.AreEqual('27.10', TargetVersion,
+            'Unreleased ranking must select 27.10: top year 2026, top month 9, highest version on the 2026/9 tie');
+        Assert.AreEqual(9, ExpectedMonth, 'Winning Expected Month must be 9 (the highest month within the top year)');
+        Assert.AreEqual(2026, ExpectedYear, 'Winning Expected Year must be 2026 (the highest year)');
+        Assert.AreEqual(false, IsAvailable, 'An unreleased winner must report IsAvailable = false');
+        Assert.AreEqual(0D, DefaultDate, 'An unreleased winner carries no selectable date (DefaultDate must be 0D)');
+    end;
+
+    // -------------------------------------------------------------------------
+    // T-c(b) — Mixed available + unreleased: the AVAILABLE version wins
+    //
+    // Requirement: a genuinely available candidate must always beat an unreleased
+    // one, even when the unreleased version string/year is "higher". The winner
+    // carries the available candidate's date, and Expected Month/Year are left 0
+    // (they belong only to unreleased winners). IsAvailable must be true.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure PickDefaultTargetVersion_MixedAvailableAndUnreleased_AvailableWins()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        TargetVersion: Text[100];
+        DefaultDate: Date;
+        ExpectedMonth: Integer;
+        ExpectedYear: Integer;
+        IsAvailable: Boolean;
+    begin
+        // Arrange — one available 27.5 (date 15-06-2026), one unreleased 27.9
+        // (Expected 8/2027 — a "higher" version and later year).
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 1;
+        TempAvailableUpdate."Target Version" := '27.5';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(15, 6, 2026);
+        TempAvailableUpdate.Insert();
+
+        InsertUnreleased(TempAvailableUpdate, 2, '27.9', 8, 2027);
+
+        // Act
+        IsAvailable := Parser.PickDefaultTargetVersion(
+            TempAvailableUpdate, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
+
+        // Assert — the available version wins despite the unreleased one's higher version/year.
+        Assert.AreEqual('27.5', TargetVersion,
+            'An available candidate must beat an unreleased one even when the unreleased version/year is higher');
+        Assert.AreEqual(DMY2Date(15, 6, 2026), DefaultDate,
+            'DefaultDate must be the available candidate''s latest selectable date');
+        Assert.AreEqual(true, IsAvailable, 'The winner is available, so IsAvailable must be true');
+        Assert.AreEqual(0, ExpectedMonth, 'Expected Month must be 0 when an available version wins');
+        Assert.AreEqual(0, ExpectedYear, 'Expected Year must be 0 when an available version wins');
+    end;
+
+    // -------------------------------------------------------------------------
+    // T-e — Representative Admin-API v2.28 payload through the REAL parser
+    //
+    // The mock fixture (pipe-delimited) bypasses ParseUpdatesJson entirely, so the
+    // parser/Admin-API JSON glue is otherwise untested end-to-end. This feeds a
+    // realistic v2.28 response — one released entry (available=true,
+    // targetVersionType, scheduleDetails with latestSelectableDateTime,
+    // selectedDateTime, ignoreUpdateWindow, rolloutStatus) and one unreleased entry
+    // (available=false, expectedAvailability month/year) — through ParseUpdatesJson
+    // and asserts every parsed field on both rows.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure Parser_RepresentativeV228Payload_ParsesReleasedAndUnreleased()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        Json: Text;
+    begin
+        // Arrange — a representative two-entry Admin API v2.28 "value" array.
+        Json := '{"value":[' +
+                  '{' +
+                    '"targetVersion":"27.5",' +
+                    '"available":true,' +
+                    '"targetVersionType":"Major",' +
+                    '"scheduleDetails":{' +
+                      '"selectedDateTime":"2030-06-10T00:00:00Z",' +
+                      '"latestSelectableDateTime":"2030-06-15T00:00:00Z",' +
+                      '"ignoreUpdateWindow":false,' +
+                      '"rolloutStatus":"Active"' +
+                    '}' +
+                  '},' +
+                  '{' +
+                    '"targetVersion":"27.6",' +
+                    '"available":false,' +
+                    '"expectedAvailability":{' +
+                      '"month":10,' +
+                      '"year":2030' +
+                    '}' +
+                  '}' +
+                ']}';
+
+        // Act — through the REAL parser (not the pipe-delimited mock fixture).
+        Parser.ParseUpdatesJson(Json, TempAvailableUpdate);
+
+        // Assert — two rows.
+        Assert.AreEqual(2, TempAvailableUpdate.Count(),
+            'Parser must produce exactly 2 rows for a two-entry v2.28 response');
+
+        // Released 27.5 row.
+        TempAvailableUpdate.Reset();
+        TempAvailableUpdate.SetRange("Target Version", '27.5');
+        Assert.IsTrue(TempAvailableUpdate.FindFirst(), 'Expected the released 27.5 row');
+        Assert.AreEqual(true, TempAvailableUpdate.Available, '27.5: Available must be true');
+        Assert.AreEqual('Major', TempAvailableUpdate."Target Version Type",
+            '27.5: Target Version Type must be parsed from targetVersionType');
+        Assert.AreEqual(DMY2Date(15, 6, 2030), TempAvailableUpdate."Latest Selectable Date",
+            '27.5: Latest Selectable Date must be parsed from latestSelectableDateTime');
+        Assert.AreEqual(DMY2Date(10, 6, 2030), TempAvailableUpdate."Selected DateTime",
+            '27.5: Selected DateTime must be parsed from scheduleDetails.selectedDateTime');
+        Assert.AreEqual(false, TempAvailableUpdate."Ignore Update Window",
+            '27.5: Ignore Update Window must be parsed from ignoreUpdateWindow (false)');
+        Assert.AreEqual('Active', TempAvailableUpdate."Rollout Status",
+            '27.5: Rollout Status must be parsed from rolloutStatus');
+        Assert.AreEqual(0, TempAvailableUpdate."Expected Month", '27.5: Expected Month must be 0 (released entry)');
+        Assert.AreEqual(0, TempAvailableUpdate."Expected Year", '27.5: Expected Year must be 0 (released entry)');
+
+        // Unreleased 27.6 row.
+        TempAvailableUpdate.Reset();
+        TempAvailableUpdate.SetRange("Target Version", '27.6');
+        Assert.IsTrue(TempAvailableUpdate.FindFirst(), 'Expected the unreleased 27.6 row');
+        Assert.AreEqual(false, TempAvailableUpdate.Available, '27.6: Available must be false');
+        Assert.AreEqual(10, TempAvailableUpdate."Expected Month", '27.6: Expected Month must be 10');
+        Assert.AreEqual(2030, TempAvailableUpdate."Expected Year", '27.6: Expected Year must be 2030');
+        Assert.AreEqual(0D, TempAvailableUpdate."Latest Selectable Date",
+            '27.6: Latest Selectable Date must be 0D (no scheduleDetails)');
+    end;
+
+    // -------------------------------------------------------------------------
+    // T-h(1) — Parser maps targetVersionType / selectedDateTime / ignoreUpdateWindow
+    //
+    // Requirement: these three fields the mock never exercises must be mapped from
+    // a JSON payload that includes them. Uses ignoreUpdateWindow=true (distinct
+    // from T-e's false) and a selectedDateTime distinct from the deadline.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure Parser_MapsTargetVersionTypeSelectedDateAndIgnoreWindow()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        Json: Text;
+    begin
+        // Arrange
+        Json := '{"value":[{' +
+                  '"targetVersion":"27.5",' +
+                  '"available":true,' +
+                  '"targetVersionType":"Minor",' +
+                  '"scheduleDetails":{' +
+                    '"selectedDateTime":"2030-07-20T00:00:00Z",' +
+                    '"latestSelectableDateTime":"2030-08-01T00:00:00Z",' +
+                    '"ignoreUpdateWindow":true,' +
+                    '"rolloutStatus":"Scheduled"' +
+                  '}' +
+                '}]}';
+
+        // Act
+        Parser.ParseUpdatesJson(Json, TempAvailableUpdate);
+
+        // Assert
+        Assert.AreEqual(1, TempAvailableUpdate.Count(), 'Parser must produce exactly 1 row');
+        TempAvailableUpdate.FindFirst();
+        Assert.AreEqual('Minor', TempAvailableUpdate."Target Version Type",
+            'Target Version Type must be parsed from targetVersionType');
+        Assert.AreEqual(DMY2Date(20, 7, 2030), TempAvailableUpdate."Selected DateTime",
+            'Selected DateTime must be parsed from scheduleDetails.selectedDateTime');
+        Assert.AreEqual(true, TempAvailableUpdate."Ignore Update Window",
+            'Ignore Update Window must be parsed as true from ignoreUpdateWindow');
+    end;
+
+    // -------------------------------------------------------------------------
+    // T-h(2) — CompareVersions pre-release tie-break: "27.5" beats "27.5-preview"
+    //
+    // Requirement: a non-numeric / pre-release segment must sort BELOW any numeric
+    // segment, so the released "27.5" outranks the pre-release "27.5-preview".
+    // CompareVersions is local, so it is exercised through PickDefaultTargetVersion
+    // (both candidates available). Asserted order-independently by relying on the
+    // deterministic ranking, not insertion order.
+    // -------------------------------------------------------------------------
+    [Test]
+    procedure PickDefaultTargetVersion_PreReleaseSegment_SortsBelowRelease()
+    var
+        Parser: Codeunit "D4P BC Update Parser";
+        TempAvailableUpdate: Record "D4P BC Available Update" temporary;
+        TargetVersion: Text[100];
+        DefaultDate: Date;
+        ExpectedMonth: Integer;
+        ExpectedYear: Integer;
+        IsAvailable: Boolean;
+    begin
+        // Arrange — pre-release inserted FIRST to prove it does not win by insertion order.
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 1;
+        TempAvailableUpdate."Target Version" := '27.5-preview';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(1, 5, 2030);
+        TempAvailableUpdate.Insert();
+
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := 2;
+        TempAvailableUpdate."Target Version" := '27.5';
+        TempAvailableUpdate.Available := true;
+        TempAvailableUpdate."Latest Selectable Date" := DMY2Date(1, 6, 2030);
+        TempAvailableUpdate.Insert();
+
+        // Act
+        IsAvailable := Parser.PickDefaultTargetVersion(
+            TempAvailableUpdate, TargetVersion, DefaultDate, ExpectedMonth, ExpectedYear);
+
+        // Assert — the released "27.5" wins because its 2nd segment "5" (numeric)
+        // outranks "5-preview" (non-numeric, sorts as below-any-number).
+        Assert.AreEqual('27.5', TargetVersion,
+            'Released "27.5" must outrank pre-release "27.5-preview" (non-numeric segment sorts below numeric)');
+        Assert.AreEqual(DMY2Date(1, 6, 2030), DefaultDate,
+            'DefaultDate must be the winning released "27.5" candidate''s date');
+        Assert.AreEqual(true, IsAvailable, 'The winner is available, so IsAvailable must be true');
+    end;
+
+    /// <summary>
+    /// Inserts one unreleased (Available = false) candidate row with the given
+    /// Expected Month/Year and no selectable date.
+    /// </summary>
+    local procedure InsertUnreleased(var TempAvailableUpdate: Record "D4P BC Available Update" temporary; EntryNo: Integer; Version: Text[100]; ExpMonth: Integer; ExpYear: Integer)
+    begin
+        TempAvailableUpdate.Init();
+        TempAvailableUpdate."Entry No." := EntryNo;
+        TempAvailableUpdate."Target Version" := Version;
+        TempAvailableUpdate.Available := false;
+        TempAvailableUpdate."Expected Month" := ExpMonth;
+        TempAvailableUpdate."Expected Year" := ExpYear;
+        TempAvailableUpdate.Insert();
+    end;
+
     var
         Assert: Codeunit "Library Assert";
 }

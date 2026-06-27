@@ -18,7 +18,7 @@ codeunit 62105 "D4P Veto All Subscriber"
     EventSubscriberInstance = Manual;
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"D4P BC Bulk Reschedule Mgt", 'OnBeforeApplyReschedule', '', false, false)]
-    procedure OnBeforeApplyReschedule_VetoAll(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
+    procedure OnBeforeApplyReschedule_VetoAll(var TempPlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
     begin
         Skip := true;
     end;

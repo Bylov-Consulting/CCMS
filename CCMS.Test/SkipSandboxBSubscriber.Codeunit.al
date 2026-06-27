@@ -14,9 +14,9 @@ codeunit 62103 "D4P Skip Sandbox B Subscriber"
     EventSubscriberInstance = Manual;
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"D4P BC Bulk Reschedule Mgt", 'OnBeforeApplyReschedule', '', false, false)]
-    procedure OnBeforeApplyReschedule_SkipSandboxB(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
+    procedure OnBeforeApplyReschedule_SkipSandboxB(var TempPlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
     begin
-        if PlanLine."Environment Name" = 'SANDBOX-B' then
+        if TempPlanLine."Environment Name" = 'SANDBOX-B' then
             Skip := true;
     end;
 }

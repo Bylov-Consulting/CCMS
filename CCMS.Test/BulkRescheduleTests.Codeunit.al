@@ -1046,8 +1046,371 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
     end;
 
     // -----------------------------------------------------------------------
+    //  T-a — BuildPlan computes the fixture's expected DEFAULTS on a Pending row
+    //
+    //  Requirement: BuildPlan, for an env with a single genuinely-available update,
+    //  must derive the plan row's defaults from the fetched candidate — Target
+    //  Version, Selected Date (pre-filled to the deadline), Latest Selectable Date,
+    //  and Available — BEFORE the user touches anything. This asserts the computed
+    //  values directly (no overwrite), so a regression that left them blank/wrong
+    //  would be caught. Fixture: 27.5, available, deadline 01-06-2030 (future, so
+    //  the past-date guard does not fire), Expected Month/Year 0 (available path).
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_BuildPlan_ComputesFixtureDefaultsOnPendingRow()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        CustNo: Code[20];
+    begin
+        // GIVEN one env whose only update is 27.5, available, deadline 01-06-2030.
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-TA');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'DEFAULTS-ENV');
+        MockAPI.SetFixtureForEnv('DEFAULTS-ENV', '27.5|true|01-06-2030|6|2030');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        // WHEN BuildPlan derives the default plan row.
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // THEN — assert the computed defaults BEFORE any overwrite.
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'DEFAULTS-ENV');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected a plan row for DEFAULTS-ENV');
+
+        Assert.AreEqual(TempPlan.Result::Pending, TempPlan.Result,
+            'An env with an available update must yield a Pending row');
+        Assert.AreEqual('27.5', TempPlan."Target Version",
+            'BuildPlan must pick the available candidate 27.5 as the default Target Version');
+        Assert.AreEqual(DMY2Date(1, 6, 2030), TempPlan."Selected Date",
+            'BuildPlan must pre-fill Selected Date with the candidate''s latest selectable date (the deadline)');
+        Assert.AreEqual(DMY2Date(1, 6, 2030), TempPlan."Latest Selectable Date",
+            'BuildPlan must copy the candidate''s latest selectable date onto the plan row');
+        Assert.IsTrue(TempPlan.Available,
+            'A genuinely available candidate (available=true) must set Available=true on the plan row');
+        // Available path leaves Expected Month/Year at 0 (those belong to unreleased candidates).
+        Assert.AreEqual(0, TempPlan."Expected Month",
+            'Expected Month must be 0 for an available candidate');
+        Assert.AreEqual(0, TempPlan."Expected Year",
+            'Expected Year must be 0 for an available candidate');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  T-b — Apply payload carries the version/date BuildPlan computed
+    //
+    //  Requirement: on apply, the orchestrator must send to the Admin API exactly
+    //  the Target Version and Selected Date that BuildPlan computed for the env —
+    //  not a hard-coded literal. The mock logs the full apply payload as
+    //  "Env|Version|Date|branch". This test reads the computed Version/Date from
+    //  the Pending row (does NOT overwrite them) and asserts the logged call's
+    //  "Env|Version|Date|" prefix is built from those exact computed values, so a
+    //  blank/wrong version or date reaching the API would fail.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_ApplyPayload_UsesComputedVersionAndDate()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        SelectCalls: List of [Text];
+        CustNo: Code[20];
+        ComputedVersion: Text[100];
+        ComputedDate: Date;
+        ExpectedPrefix: Text;
+    begin
+        // GIVEN one env with an available update (future deadline so it stays actionable).
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-TB');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'PAYLOAD-ENV');
+        MockAPI.SetFixtureForEnv('PAYLOAD-ENV', '27.5|true|01-06-2030|6|2030');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // Capture the values BuildPlan computed — DO NOT overwrite them with a literal.
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'PAYLOAD-ENV');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected a plan row for PAYLOAD-ENV');
+        ComputedVersion := TempPlan."Target Version";
+        ComputedDate := TempPlan."Selected Date";
+        Assert.AreNotEqual('', ComputedVersion, 'Pre-condition: BuildPlan must have computed a non-blank version');
+
+        // WHEN the (computed, un-overwritten) Pending plan is applied.
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // THEN the logged apply payload's Env|Version|Date prefix is built from the
+        // EXACT values BuildPlan computed. ExpectedPrefix is formatted with the same
+        // StrSubstNo the mock uses, so locale-dependent Date formatting cancels out.
+        SelectCalls := MockAPI.GetSelectCalls();
+        Assert.AreEqual(1, SelectCalls.Count(),
+            'SelectTargetVersion must be called exactly once for the single PAYLOAD-ENV');
+        ExpectedPrefix := StrSubstNo('%1|%2|%3|', 'PAYLOAD-ENV', ComputedVersion, ComputedDate);
+        Assert.AreEqual(1, StrPos(SelectCalls.Get(1), ExpectedPrefix),
+            StrSubstNo('Apply payload must carry the computed version/date. Expected prefix "%1", got: "%2"',
+                ExpectedPrefix, SelectCalls.Get(1)));
+    end;
+
+    // -----------------------------------------------------------------------
+    //  T-d — Retry Failed: ≥2 Failed rows reset to Pending and re-applied exactly
+    //        once; Succeeded and Skipped rows left untouched
+    //
+    //  Requirement: the "Retry Failed" gesture re-applies ONLY the rows that
+    //  failed, exactly once each, and never re-touches rows that already
+    //  Succeeded or were Skipped.
+    //
+    //  The page's RetryFailedRows is a LOCAL page procedure (page 62033) and is
+    //  not directly invocable from a test, nor drivable via TestPage because its
+    //  SetData/SetOrchestrator/SetAdminAPI seams take var-record/codeunit params.
+    //  This test reproduces RetryFailedRows' exact production sequence — filter
+    //  Result=Failed, reset those rows to Pending with Reason cleared, then call
+    //  the SAME production orchestrator.ApplyPlan — so it exercises the real
+    //  re-apply path the action delegates to.
+    //
+    //  Layout: ENV-A,ENV-D succeed; ENV-B,ENV-C fail; SKIP-ENV has no fixture so
+    //  BuildPlan marks it Skipped (never Pending, never applied).
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_RetryFailed_ReappliesOnlyFailedRowsExactlyOnce()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        SelectCalls: List of [Text];
+        CustNo: Code[20];
+        TenantIdD2: Guid;
+        TenantIdSkip: Guid;
+        EnvACount: Integer;
+        EnvBCount: Integer;
+        EnvCCount: Integer;
+        EnvDCount: Integer;
+        SkipCount: Integer;
+        I: Integer;
+        Entry: Text;
+    begin
+        // Arrange — run 1
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-TD');
+        Evaluate(TenantIdD2, '{60000000-0000-0000-0000-000000000004}');
+        Evaluate(TenantIdSkip, '{60000000-0000-0000-0000-000000000005}');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'ENV-A');
+        CreateTestEnv(BCEnv, CustNo, TenantIdB, 'ENV-B');
+        CreateTestEnv(BCEnv, CustNo, TenantIdC, 'ENV-C');
+        CreateTestEnv(BCEnv, CustNo, TenantIdD2, 'ENV-D');
+        CreateTestEnv(BCEnv, CustNo, TenantIdSkip, 'SKIP-ENV');
+
+        MockAPI.SetFixtureForEnv('ENV-A', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('ENV-B', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('ENV-C', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('ENV-D', '27.5|true|01-06-2030|6|2030');
+        // SKIP-ENV: no fixture → BuildPlan marks it Skipped (no updates available).
+
+        // ENV-B and ENV-C fail on the first run.
+        MockAPI.ForceFailOn('ENV-B');
+        MockAPI.ForceFailOn('ENV-C');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // Accept defaults for all Pending rows (the 4 real-fixture envs).
+        TempPlan.SetRange(Result, TempPlan.Result::Pending);
+        if TempPlan.FindSet(true) then
+            repeat
+                TempPlan."Target Version" := '27.5';
+                TempPlan.Modify();
+            until TempPlan.Next() = 0;
+
+        // Run 1
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // Verify pre-retry state: A,D Succeeded; B,C Failed; SKIP-ENV Skipped.
+        AssertEnvResult(TempPlan, 'ENV-A', TempPlan.Result::Succeeded);
+        AssertEnvResult(TempPlan, 'ENV-D', TempPlan.Result::Succeeded);
+        AssertEnvResult(TempPlan, 'ENV-B', TempPlan.Result::Failed);
+        AssertEnvResult(TempPlan, 'ENV-C', TempPlan.Result::Failed);
+        AssertEnvResult(TempPlan, 'SKIP-ENV', TempPlan.Result::Skipped);
+
+        // Clear forced failures so the retry succeeds.
+        MockAPI.ClearFailures();
+
+        // Act — reproduce RetryFailedRows' production sequence exactly:
+        //   filter Result=Failed, reset those rows to Pending + clear Reason, then ApplyPlan.
+        TempPlan.Reset();
+        TempPlan.SetRange(Result, TempPlan.Result::Failed);
+        Assert.IsTrue(TempPlan.FindSet(), 'Pre-condition: there must be ≥1 Failed row to retry');
+        repeat
+            TempPlan.Result := TempPlan.Result::Pending;
+            TempPlan.Reason := '';
+            TempPlan.Modify(false);
+        until TempPlan.Next() = 0;
+        TempPlan.Reset();
+
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // Assert — post-retry: B,C now Succeeded; A,D still Succeeded; SKIP-ENV still Skipped.
+        AssertEnvResult(TempPlan, 'ENV-B', TempPlan.Result::Succeeded);
+        AssertEnvResult(TempPlan, 'ENV-C', TempPlan.Result::Succeeded);
+        AssertEnvResult(TempPlan, 'ENV-A', TempPlan.Result::Succeeded);
+        AssertEnvResult(TempPlan, 'ENV-D', TempPlan.Result::Succeeded);
+        AssertEnvResult(TempPlan, 'SKIP-ENV', TempPlan.Result::Skipped);
+
+        // Assert — call accounting proves "re-applied exactly once" and "untouched":
+        //   ENV-A,ENV-D each applied once (run 1 only — NOT retried).
+        //   ENV-B,ENV-C each applied twice (run 1 fail + retry).
+        //   SKIP-ENV never applied.
+        SelectCalls := MockAPI.GetSelectCalls();
+        for I := 1 to SelectCalls.Count() do begin
+            Entry := SelectCalls.Get(I);
+            if StrPos(Entry, 'ENV-A|') = 1 then
+                EnvACount += 1;
+            if StrPos(Entry, 'ENV-B|') = 1 then
+                EnvBCount += 1;
+            if StrPos(Entry, 'ENV-C|') = 1 then
+                EnvCCount += 1;
+            if StrPos(Entry, 'ENV-D|') = 1 then
+                EnvDCount += 1;
+            if StrPos(Entry, 'SKIP-ENV|') = 1 then
+                SkipCount += 1;
+        end;
+
+        Assert.AreEqual(1, EnvACount, 'ENV-A must be applied exactly once (Succeeded row not retried)');
+        Assert.AreEqual(1, EnvDCount, 'ENV-D must be applied exactly once (Succeeded row not retried)');
+        Assert.AreEqual(2, EnvBCount, 'ENV-B must be applied exactly twice (run 1 failed + retry once)');
+        Assert.AreEqual(2, EnvCCount, 'ENV-C must be applied exactly twice (run 1 failed + retry once)');
+        Assert.AreEqual(0, SkipCount, 'SKIP-ENV must never be applied (it was Skipped, not Pending)');
+        Assert.AreEqual(6, SelectCalls.Count(), 'Total apply calls must be 6: A,D once + B,C twice');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  T-f — EnvGoneErr path: a Pending row whose env no longer exists in the
+    //        local D4P BC Environment table is marked Failed with a naming Reason
+    //
+    //  Requirement: if the (Customer No., Tenant ID, Environment Name) of a Pending
+    //  plan row matches no D4P BC Environment record at apply time (deleted between
+    //  BuildPlan and ApplyPlan, or fabricated), ApplyPlan must mark it Failed with a
+    //  Reason that names the env and explains it no longer exists — not an opaque
+    //  downstream failure. No Admin API apply call must be made for that row.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_EnvNoLongerExists_MarkedFailedWithNamingReason()
+    var
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        SelectCalls: List of [Text];
+        TenantIdGhost: Guid;
+    begin
+        // GIVEN a Pending plan row for an env that is NOT in the database.
+        Evaluate(TenantIdGhost, '{70000000-0000-0000-0000-000000000001}');
+        MockAPI.Reset();
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        TempPlan.Init();
+        TempPlan."Entry No." := 1;
+        TempPlan."Customer No." := 'TBULK-TF';
+        TempPlan."Tenant ID" := TenantIdGhost;
+        TempPlan."Environment Name" := 'GHOST-ENV';
+        TempPlan."Target Version" := '27.5';
+        TempPlan."Selected Date" := DMY2Date(1, 6, 2030);
+        TempPlan.Available := true;
+        TempPlan.Result := TempPlan.Result::Pending;
+        TempPlan.Insert();
+
+        // WHEN the plan is applied and the env cannot be Get()-ed.
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // THEN the row is Failed with a Reason naming the env / "no longer exists".
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'GHOST-ENV');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected the GHOST-ENV plan row');
+        Assert.AreEqual(TempPlan.Result::Failed, TempPlan.Result,
+            'A Pending row whose env no longer exists must be marked Failed');
+        Assert.IsTrue(
+            StrPos(TempPlan.Reason, 'GHOST-ENV') > 0,
+            StrSubstNo('Failure Reason must name the missing env GHOST-ENV, got: %1', TempPlan.Reason));
+        Assert.IsTrue(
+            StrPos(LowerCase(TempPlan.Reason), 'no longer exist') > 0,
+            StrSubstNo('Failure Reason must explain the env no longer exists, got: %1', TempPlan.Reason));
+
+        // AND no Admin API apply call was made for a non-existent env.
+        SelectCalls := MockAPI.GetSelectCalls();
+        Assert.AreEqual(0, SelectCalls.Count(),
+            'SelectTargetVersion must not be called for an env that no longer exists');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  T-g — Multi-version fixture end-to-end: orchestrator picks the highest
+    //        available version with its date, proven before any overwrite
+    //
+    //  Requirement: when an env's fetch returns several available versions, the
+    //  full BuildPlan path (mock fetch → parser PickDefaultTargetVersion →
+    //  plan row) must select the highest semantic version (27.10 > 27.9, NOT a
+    //  lexicographic pick) and carry that winner's date. Proven end-to-end on the
+    //  computed Pending row before the user overwrites anything.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_MultiVersionFixture_PicksHighestEndToEnd()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        CustNo: Code[20];
+    begin
+        // GIVEN one env whose fetch returns 27.9 AND 27.10, both available, with
+        // distinct deadlines (future, so the past-date guard does not fire).
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-TG');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'MULTI-ENV');
+        MockAPI.SetFixtureForEnv('MULTI-ENV', '27.9|true|15-05-2030|0|0\n27.10|true|15-06-2030|0|0');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        // WHEN BuildPlan derives the default plan row.
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // THEN — before any overwrite — the row targets the HIGHEST version 27.10
+        // with its date 15-06-2030 (a lexicographic compare would wrongly pick 27.9).
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'MULTI-ENV');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected a plan row for MULTI-ENV');
+        Assert.AreEqual(TempPlan.Result::Pending, TempPlan.Result,
+            'Multi-available env must produce a Pending row');
+        Assert.AreEqual('27.10', TempPlan."Target Version",
+            'BuildPlan must select the highest semantic version 27.10 (not lexicographic 27.9) end-to-end');
+        Assert.AreEqual(DMY2Date(15, 6, 2030), TempPlan."Selected Date",
+            'Selected Date must be the winning version 27.10''s latest selectable date');
+        Assert.IsTrue(TempPlan.Available,
+            '27.10 is available, so the plan row must be Available=true');
+    end;
+
+    // -----------------------------------------------------------------------
     //  Helpers
     // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts the single plan row for EnvName has the expected Result. Resets the
+    /// filter so callers can reuse TempPlan immediately after.
+    /// </summary>
+    local procedure AssertEnvResult(var TempPlan: Record "D4P BC Reschedule Plan Line" temporary; EnvName: Text; ExpectedResult: Enum "D4P Reschedule Result")
+    begin
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", EnvName);
+        Assert.IsTrue(TempPlan.FindFirst(), StrSubstNo('Expected a plan row for %1', EnvName));
+        // Compare ordinals and keep the message free of Format(Enum) so the eagerly-evaluated
+        // message text does not trip the al-runner-only Format(Enum) quirk on a passing run.
+        Assert.AreEqual(ExpectedResult.AsInteger(), TempPlan.Result.AsInteger(),
+            StrSubstNo('%1 has an unexpected Result (ordinal mismatch)', EnvName));
+        TempPlan.Reset();
+    end;
 
     local procedure Initialize()
     begin

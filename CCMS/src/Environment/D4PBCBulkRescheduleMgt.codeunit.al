@@ -393,22 +393,23 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     /// Publishes before each apply. Subscribers set Skip := true to veto an individual env.
     /// </summary>
     /// <remarks>
-    /// The parameter keeps the name <c>PlanLine</c>: AL binds event-subscriber parameters by name
-    /// (renaming the publisher parameter raises AL0282 in every existing subscriber). The R-C9
-    /// hardening is instead delivered by the publisher passing a COPY of the row (see ApplyPlan),
-    /// so a navigating subscriber cannot disturb the live apply cursor regardless of the name.
+    /// The parameter is named <c>TempPlanLine</c> to signal it is a temporary record. AL binds
+    /// event-subscriber parameters by name, so every subscriber declares the same
+    /// <c>TempPlanLine</c> parameter name. The R-C9 hardening is delivered by the publisher passing
+    /// a COPY of the row (see ApplyPlan), so a navigating subscriber cannot disturb the live apply
+    /// cursor regardless of the name.
     /// </remarks>
     [IntegrationEvent(false, false)]
-    local procedure OnBeforeApplyReschedule(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
+    local procedure OnBeforeApplyReschedule(var TempPlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
     begin
     end;
 
     /// <summary>
     /// Publishes after each apply. For observability / audit sinks.
     /// </summary>
-    /// <remarks>Parameter name <c>PlanLine</c> retained for subscriber binding — see OnBeforeApplyReschedule.</remarks>
+    /// <remarks>Parameter name <c>TempPlanLine</c> shared with subscriber binding — see OnBeforeApplyReschedule.</remarks>
     [IntegrationEvent(false, false)]
-    local procedure OnAfterApplyReschedule(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary)
+    local procedure OnAfterApplyReschedule(var TempPlanLine: Record "D4P BC Reschedule Plan Line" temporary)
     begin
     end;
 

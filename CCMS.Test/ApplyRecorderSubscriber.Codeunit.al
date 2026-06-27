@@ -18,9 +18,9 @@ codeunit 62104 "D4P Apply Recorder Subscriber"
         CallLog: List of [Text];
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"D4P BC Bulk Reschedule Mgt", 'OnAfterApplyReschedule', '', false, false)]
-    procedure OnAfterApplyReschedule_Record(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary)
+    procedure OnAfterApplyReschedule_Record(var TempPlanLine: Record "D4P BC Reschedule Plan Line" temporary)
     begin
-        CallLog.Add(PlanLine."Environment Name" + '|' + Format(PlanLine.Result));
+        CallLog.Add(TempPlanLine."Environment Name" + '|' + Format(TempPlanLine.Result));
     end;
 
     /// <summary>
