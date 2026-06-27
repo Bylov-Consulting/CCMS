@@ -774,6 +774,67 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
     end;
 
     // -----------------------------------------------------------------------
+    //  U6 — Available update with no latest-selectable-date must still be
+    //       marked Available on the plan row (PR #5 review finding)
+    //
+    //  The Admin API can return a genuinely available version (available=true)
+    //  that carries no scheduleDetails / latestSelectableDate, i.e. its
+    //  "Latest Selectable Date" parses to 0D. PickDefaultTargetVersion still
+    //  picks it (it is the best Available candidate), so BuildPlan produces a
+    //  Pending row with Target Version = 27.5.
+    //
+    //  Requirement: the plan row's Available flag must reflect the SOURCE
+    //  candidate's real availability (available=true), NOT merely whether a
+    //  selectable date exists. The current production code derives it from the
+    //  date (AvailableFlag := DefaultDate <> 0D), so it is wrongly false here.
+    //
+    //  Why this matters downstream: on apply, D4P BC Admin API.SelectTargetVersion
+    //  derives IsAvailable := (SelectedDate <> 0D). Because BuildPlan dropped the
+    //  candidate's real availability into a 0D-driven flag and a 0D Selected Date,
+    //  a genuinely available version is rescheduled through the UNRELEASED branch
+    //  (no scheduleDetails). The root cause is the Available flag computed here.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_AvailableUpdateWithNoDate_MarkedAvailable()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        CustNo: Code[20];
+    begin
+        // GIVEN an environment whose only update is genuinely available
+        // (available=true) but for which the Admin API returned NO
+        // latest-selectable-date (field 3 = 0 -> Latest Selectable Date = 0D).
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-U6');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'AVAIL-NODATE');
+        MockAPI.SetFixtureForEnv('AVAIL-NODATE', '27.5|true|0|0|0');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        // WHEN BuildPlan derives the default plan row from the fetched candidates.
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        // THEN the available candidate is picked as a Pending row (sanity — passes today)
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'AVAIL-NODATE');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected a plan row for AVAIL-NODATE');
+        Assert.AreEqual('27.5', TempPlan."Target Version",
+            'BuildPlan must select the available candidate 27.5 as the default target version');
+        Assert.AreEqual(TempPlan.Result::Pending, TempPlan.Result,
+            'A row with an available update must be Pending, not Skipped');
+
+        // AND its Available flag must come from the candidate's real availability
+        // (available=true), not from the presence of a selectable date. This is the
+        // load-bearing assertion: with the current code (AvailableFlag := DefaultDate
+        // <> 0D) it is wrongly false, so this FAILS in RED.
+        Assert.IsTrue(TempPlan.Available,
+            'A genuinely available update (available=true) must yield Available=true on the plan row even when the Admin API returned no latest-selectable-date (0D); the flag must reflect the candidate''s availability, not whether a date exists.');
+    end;
+
+    // -----------------------------------------------------------------------
     //  Helpers
     // -----------------------------------------------------------------------
 
