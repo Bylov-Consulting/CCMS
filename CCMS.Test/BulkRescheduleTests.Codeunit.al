@@ -46,9 +46,9 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         CreateTestEnv(BCEnv, CustNo, TenantIdB, 'PROD-B');
         CreateTestEnv(BCEnv, CustNo, TenantIdC, 'PROD-C');
 
-        MockAPI.SetFixtureForEnv('PROD-A', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('PROD-B', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('PROD-C', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('PROD-A', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('PROD-B', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('PROD-C', '27.5|true|01-06-2030|6|2030');
 
         Orchestrator.SetAdminAPI(MockAPI);
 
@@ -122,9 +122,9 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         CreateTestEnv(BCEnv, CustNo, TenantIdB, 'SANDBOX-A');
         CreateTestEnv(BCEnv, CustNo, TenantIdC, 'ENV-C');
 
-        MockAPI.SetFixtureForEnv('ENV-A', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('SANDBOX-A', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('ENV-C', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('ENV-A', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('SANDBOX-A', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('ENV-C', '27.5|true|01-06-2030|6|2030');
 
         MockAPI.ForceFailOn('SANDBOX-A');
 
@@ -272,9 +272,9 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         CreateTestEnv(BCEnv, CustNo, TenantIdB, 'KEEP-C');
         CreateTestEnv(BCEnv, CustNo, TenantIdC, 'KEEP-D');
 
-        MockAPI.SetFixtureForEnv('SANDBOX-B', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('KEEP-C', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('KEEP-D', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('SANDBOX-B', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('KEEP-C', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('KEEP-D', '27.5|true|01-06-2030|6|2030');
 
         Orchestrator.SetAdminAPI(MockAPI);
 
@@ -374,9 +374,9 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         CreateTestEnv(BCEnv, CustNo, TenantIdB, 'SANDBOX-MID');
         CreateTestEnv(BCEnv, CustNo, TenantIdC, 'PROD-Z');
 
-        MockAPI.SetFixtureForEnv('PROD-X', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('SANDBOX-MID', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('PROD-Z', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('PROD-X', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('SANDBOX-MID', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('PROD-Z', '27.5|true|01-06-2030|6|2030');
 
         // SANDBOX-MID will fail on SelectTargetVersion
         MockAPI.ForceFailOn('SANDBOX-MID');
@@ -530,8 +530,8 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         CreateTestEnv(BCEnv, CustNo, TenantIdA, 'ENV-A');
         CreateTestEnv(BCEnv, CustNo, TenantIdB, 'ENV-B');
 
-        MockAPI.SetFixtureForEnv('ENV-A', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('ENV-B', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('ENV-A', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('ENV-B', '27.5|true|01-06-2030|6|2030');
 
         // ENV-B will fail on the first run
         MockAPI.ForceFailOn('ENV-B');
@@ -651,9 +651,9 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         CreateTestEnv(BCEnv, CustNo, TenantIdE, 'VETO-ENV-2');
         CreateTestEnv(BCEnv, CustNo, TenantIdF, 'VETO-ENV-3');
 
-        MockAPI.SetFixtureForEnv('VETO-ENV-1', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('VETO-ENV-2', '27.5|true|01-06-2026|6|2026');
-        MockAPI.SetFixtureForEnv('VETO-ENV-3', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('VETO-ENV-1', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('VETO-ENV-2', '27.5|true|01-06-2030|6|2030');
+        MockAPI.SetFixtureForEnv('VETO-ENV-3', '27.5|true|01-06-2030|6|2030');
 
         Orchestrator.SetAdminAPI(MockAPI);
 
@@ -751,7 +751,7 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         CustNo := EnsureCustomer('TBULK-U5');
 
         CreateTestEnv(BCEnv, CustNo, TenantIdG, 'REAL-ENV');
-        MockAPI.SetFixtureForEnv('REAL-ENV', '27.5|true|01-06-2026|6|2026');
+        MockAPI.SetFixtureForEnv('REAL-ENV', '27.5|true|01-06-2030|6|2030');
         Orchestrator.SetAdminAPI(MockAPI);
 
         // Act
@@ -864,6 +864,185 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
         Assert.IsTrue(TempPlan.FindFirst(), 'Expected AVAIL-NODATE row after apply');
         Assert.AreEqual(TempPlan.Result::Succeeded, TempPlan.Result,
             'AVAIL-NODATE must be Succeeded after apply');
+    end;
+
+    // -----------------------------------------------------------------------
+    //  C4 — Apply failure Reason must surface the Admin API's error detail
+    //
+    //  Bug: D4P BC Admin API.SelectTargetVersion discards the HTTP ResponseText on
+    //  PATCH failure (exit(false)). The orchestrator's TryApply then raises a fixed
+    //  generic APIFailureErr ("Admin API reported the reschedule request failed."),
+    //  so EVERY apply failure's Reason is the same opaque string — the partner never
+    //  sees WHY the Admin API rejected the request.
+    //
+    //  Requirement: a failed plan row's Reason must contain the distinctive error
+    //  detail the Admin API returned for that env, not a generic placeholder.
+    //
+    //  RED: ForceFailWithDetailOn registers a distinctive detail and makes the mock
+    //  apply fail. Under today's boolean-only contract the detail has no channel to
+    //  reach the Reason, so the failed row's Reason is the generic string and the
+    //  "Reason contains detail" assertion FAILS. The GREEN step wires the detail
+    //  through (e.g. surfaces ResponseText) so the assertion passes.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_ApplyFailure_ReasonSurfacesApiErrorDetail()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        CustNo: Code[20];
+        ApiDetail: Text;
+    begin
+        // GIVEN an env whose apply (PATCH) fails carrying a distinctive Admin-API error body
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-C4');
+        ApiDetail := 'CONFLICT_UPDATE_WINDOW_LOCKED_xyz123';
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'DETAIL-ENV');
+        MockAPI.SetFixtureForEnv('DETAIL-ENV', '27.5|true|01-06-2030|6|2030');
+        MockAPI.ForceFailWithDetailOn('DETAIL-ENV', ApiDetail);
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        TempPlan.SetRange(Result, TempPlan.Result::Pending);
+        if TempPlan.FindSet(true) then
+            repeat
+                TempPlan."Target Version" := '27.5';
+                TempPlan.Modify();
+            until TempPlan.Next() = 0;
+
+        // WHEN the plan is applied and the Admin API rejects the PATCH
+        Orchestrator.ApplyPlan(TempPlan);
+
+        // THEN the row is Failed AND its Reason surfaces the API's distinctive detail —
+        // not the generic APIFailureErr placeholder.
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'DETAIL-ENV');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected a plan row for DETAIL-ENV');
+        Assert.AreEqual(TempPlan.Result::Failed, TempPlan.Result,
+            'DETAIL-ENV must be Failed after the Admin API rejected the apply');
+        Assert.IsTrue(
+            StrPos(TempPlan.Reason, ApiDetail) > 0,
+            StrSubstNo('Failure Reason must surface the Admin API error detail ''%1'' (got generic/opaque: ''%2'')',
+                ApiDetail, TempPlan.Reason));
+    end;
+
+    // -----------------------------------------------------------------------
+    //  C3 — A default Selected Date already in the PAST must be flagged
+    //
+    //  Bug: BuildPlan pre-fills Selected Date := Latest Selectable Date (the
+    //  deadline) without validating it. ValidateSelectedDate (which rejects a date
+    //  < Today()) only runs on the dialog's user OnValidate. So when the Admin API
+    //  returns an update whose latestSelectableDate is already in the past, BuildPlan
+    //  leaves a Pending row carrying a silently-invalid (past) Selected Date that is
+    //  later PATCHed and only discovered Failed at the summary.
+    //
+    //  Requirement: BuildPlan must flag such a row (Result/Reason indicating the
+    //  deadline has passed) instead of leaving it an actionable Pending row.
+    //
+    //  RED: with a past latestSelectableDate the row is Pending today, so the
+    //  "must not be a silent Pending" assertion FAILS.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_DefaultDateInPast_RowFlaggedNotSilentlyPending()
+    var
+        BCEnv: Record "D4P BC Environment";
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        CustNo: Code[20];
+    begin
+        // GIVEN an env whose only available update carries a latestSelectableDate
+        // that is already in the past (01-01-2020).
+        Initialize();
+        MockAPI.Reset();
+        CustNo := EnsureCustomer('TBULK-C3');
+
+        CreateTestEnv(BCEnv, CustNo, TenantIdA, 'PASTDATE-ENV');
+        MockAPI.SetFixtureForEnv('PASTDATE-ENV', '27.5|true|01-01-2020|1|2020');
+
+        Orchestrator.SetAdminAPI(MockAPI);
+
+        // WHEN BuildPlan derives the default plan row.
+        BCEnv.SetRange("Customer No.", CustNo);
+        Orchestrator.BuildPlan(BCEnv, TempPlan);
+
+        TempPlan.Reset();
+        TempPlan.SetRange("Environment Name", 'PASTDATE-ENV');
+        Assert.IsTrue(TempPlan.FindFirst(), 'Expected a plan row for PASTDATE-ENV');
+
+        // Sanity: BuildPlan did pre-fill the deadline as the default Selected Date.
+        Assert.AreEqual(DMY2Date(1, 1, 2020), TempPlan."Selected Date",
+            'Pre-condition: BuildPlan pre-filled Selected Date with the (past) latest selectable date');
+
+        // THEN the row must be flagged — NOT left as a silently-actionable Pending row
+        // with a Selected Date the dialog validation would have rejected (< Today()).
+        Assert.AreNotEqual(TempPlan.Result::Pending, TempPlan.Result,
+            'A default Selected Date already in the past (deadline passed) must be flagged by BuildPlan, not left as a silent Pending row');
+
+        // AND the Reason must explain that the selectable-date deadline has passed.
+        Assert.IsTrue(
+            (StrPos(LowerCase(TempPlan.Reason), 'date') > 0) or
+            (StrPos(LowerCase(TempPlan.Reason), 'deadline') > 0) or
+            (StrPos(LowerCase(TempPlan.Reason), 'past') > 0) or
+            (StrPos(LowerCase(TempPlan.Reason), 'passed') > 0),
+            StrSubstNo('Expected Reason to explain the selectable-date deadline has passed, got: %1', TempPlan.Reason));
+    end;
+
+    // -----------------------------------------------------------------------
+    //  C2 — AnyFetchFailure distinguishes fetch-failures from genuine no-updates
+    //
+    //  Bug: RunBulkReschedule shows the generic NothingToRescheduleMsg and exits
+    //  whenever no row is Pending — so a run where EVERY env's fetch failed looks
+    //  identical to a genuine "no updates available" run, and the per-env failure
+    //  Reasons are never surfaced. The decision is inline in the UI method.
+    //
+    //  Requirement: a pure helper must report whether the plan contains any
+    //  fetch-failure Skipped row (Reason "Fetch failed: ...") so RunBulkReschedule
+    //  can surface failures instead of the generic message.
+    //
+    //  RED: AnyFetchFailure is currently a stub returning false. The negative case
+    //  (no fetch-failure rows) passes trivially; the positive case (a fetch-failure
+    //  row present) FAILS. The negative assertion also guards against a trivial
+    //  "always return true" GREEN implementation.
+    // -----------------------------------------------------------------------
+    [Test]
+    procedure BulkReschedule_AnyFetchFailure_TrueOnlyWhenFetchFailedRowsPresent()
+    var
+        TempPlan: Record "D4P BC Reschedule Plan Line" temporary;
+        TenantId1: Guid;
+        TenantId2: Guid;
+    begin
+        Evaluate(TenantId1, '{50000000-0000-0000-0000-000000000001}');
+        Evaluate(TenantId2, '{50000000-0000-0000-0000-000000000002}');
+
+        // GIVEN a plan with only a genuine "no updates available" Skipped row → no fetch failure.
+        TempPlan.Init();
+        TempPlan."Entry No." := 1;
+        TempPlan."Customer No." := 'TBULK-C2';
+        TempPlan."Tenant ID" := TenantId1;
+        TempPlan."Environment Name" := 'NOUPD-ENV';
+        TempPlan.Result := TempPlan.Result::Skipped;
+        TempPlan.Reason := 'No updates available';
+        TempPlan.Insert();
+
+        Assert.IsFalse(Orchestrator.AnyFetchFailure(TempPlan),
+            'AnyFetchFailure must be false when the only Skipped row is a genuine no-updates row');
+
+        // WHEN a fetch-failure Skipped row (Reason "Fetch failed: ...") is added.
+        TempPlan.Init();
+        TempPlan."Entry No." := 2;
+        TempPlan."Customer No." := 'TBULK-C2';
+        TempPlan."Tenant ID" := TenantId2;
+        TempPlan."Environment Name" := 'FETCHFAIL-ENV';
+        TempPlan.Result := TempPlan.Result::Skipped;
+        TempPlan.Reason := 'Fetch failed: simulated HTTP error for environment FETCHFAIL-ENV';
+        TempPlan.Insert();
+
+        // THEN the helper must report a fetch failure is present.
+        Assert.IsTrue(Orchestrator.AnyFetchFailure(TempPlan),
+            'AnyFetchFailure must be true when the plan contains a fetch-failure Skipped row (Reason "Fetch failed: ...")');
     end;
 
     // -----------------------------------------------------------------------

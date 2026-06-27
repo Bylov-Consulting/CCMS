@@ -34,6 +34,7 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
     var
         FixtureStrings: Dictionary of [Text, Text];  // env name → fixture string
         FailOnEnvs: List of [Text];                  // SelectTargetVersion → false
+        FailDetailByEnv: Dictionary of [Text, Text]; // env name → distinctive API error detail (Bug C4)
         ThrowOnFetchEnvs: List of [Text];            // GetAvailableUpdates → Error
         SelectCallLog: List of [Text];               // "EnvName|TargetVersion|Date"
 
@@ -64,6 +65,24 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
     end;
 
     /// <summary>
+    /// Like ForceFailOn, but also registers a distinctive Admin-API error DETAIL string for the
+    /// env (Bug C4). SelectTargetVersion still returns false (mirroring production's PATCH-failure
+    /// path). The detail is stored so that once the GREEN fix gives SelectTargetVersion a channel
+    /// to surface the HTTP ResponseText, the orchestrator's failure Reason can carry it. Under the
+    /// current (boolean-only) contract the detail has no channel — that is exactly what the RED
+    /// test pins (the failure Reason is a generic string today).
+    /// </summary>
+    procedure ForceFailWithDetailOn(EnvName: Text; Detail: Text)
+    begin
+        if not FailOnEnvs.Contains(EnvName) then
+            FailOnEnvs.Add(EnvName);
+        if FailDetailByEnv.ContainsKey(EnvName) then
+            FailDetailByEnv.Set(EnvName, Detail)
+        else
+            FailDetailByEnv.Add(EnvName, Detail);
+    end;
+
+    /// <summary>
     /// Clears all forced-failure registrations so every subsequent
     /// SelectTargetVersion call returns true regardless of env name.
     /// Call between ApplyPlan runs when testing the Retry Failed path.
@@ -71,6 +90,7 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
     procedure ClearFailures()
     begin
         Clear(FailOnEnvs);
+        Clear(FailDetailByEnv);
     end;
 
     /// <summary>
@@ -100,6 +120,7 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
     begin
         Clear(FixtureStrings);
         Clear(FailOnEnvs);
+        Clear(FailDetailByEnv);
         Clear(ThrowOnFetchEnvs);
         Clear(SelectCallLog);
     end;
@@ -201,10 +222,18 @@ codeunit 62100 "D4P Mock Admin API" implements "D4P IBC Admin API"
     /// orchestrator threaded in. Tests observe this to assert the apply path took the
     /// correct branch independently of whether a selectable date was present.
     /// </summary>
-    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean): Boolean
+    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean; var FailureReason: Text): Boolean
     begin
+        FailureReason := '';
         SelectCallLog.Add(StrSubstNo('%1|%2|%3|%4', BCEnvironment.Name, TargetVersion, SelectedDate, BranchToken(IsAvailable)));
-        exit(not FailOnEnvs.Contains(BCEnvironment.Name));
+        if not FailOnEnvs.Contains(BCEnvironment.Name) then
+            exit(true);
+
+        // Mirror production's PATCH-failure path: hand back any registered distinctive detail
+        // (Bug C4) so the orchestrator's failure Reason can carry it. Falls back to empty.
+        if not FailDetailByEnv.Get(BCEnvironment.Name, FailureReason) then
+            FailureReason := '';
+        exit(false);
     end;
 
     /// <summary>

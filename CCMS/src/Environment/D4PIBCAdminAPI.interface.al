@@ -27,6 +27,10 @@ interface "D4P IBC Admin API"
     /// <param name="IsAvailable">The candidate's real availability flag. Drives the released/available
     /// vs unreleased request branch — decoupled from SelectedDate, because a genuinely available
     /// version can carry no latestSelectableDate (0D).</param>
+    /// <param name="FailureReason">Out: on failure (returns false), the distinctive reason the Admin API
+    /// rejected the request (e.g. HTTP status/body / ResponseText). Empty on success or when no detail is
+    /// available — callers fall back to a generic message. Lets the orchestrator surface WHY an apply failed
+    /// in the plan row's Reason instead of an opaque placeholder.</param>
     /// <returns>true on success, false on failure.</returns>
-    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean): Boolean;
+    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean; var FailureReason: Text): Boolean;
 }

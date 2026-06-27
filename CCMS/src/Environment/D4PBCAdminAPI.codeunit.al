@@ -43,7 +43,7 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
     /// throwing) on HTTP failure so the orchestrator can record the reason and continue.
     /// Does NOT call Message() — the orchestrator owns all UX.
     /// </summary>
-    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean): Boolean
+    procedure SelectTargetVersion(var BCEnvironment: Record "D4P BC Environment"; TargetVersion: Text[100]; SelectedDate: Date; ExpectedMonth: Integer; ExpectedYear: Integer; IsAvailable: Boolean; var FailureReason: Text): Boolean
     var
         BCTenant: Record "D4P BC Tenant";
         JsonObject: JsonObject;
@@ -53,6 +53,7 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
         RequestBody: Text;
         ResponseText: Text;
     begin
+        FailureReason := '';
         // Only Tenant ID + Client ID are consumed downstream by SendAdminAPIRequest /
         // GetOAuthToken / GetClientSecret. Narrow the fetch accordingly.
         BCTenant.SetLoadFields("Tenant ID", "Client ID");
@@ -77,8 +78,12 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
                     '/environments/' + BCEnvironment.Name +
                     '/updates/' + TargetVersion;
 
-        if not APIHelper.SendAdminAPIRequest(BCTenant, 'PATCH', Endpoint, RequestBody, ResponseText) then
+        if not APIHelper.SendAdminAPIRequest(BCTenant, 'PATCH', Endpoint, RequestBody, ResponseText) then begin
+            // Surface the Admin API's HTTP status/body so the orchestrator can record WHY the
+            // apply failed in the plan row's Reason, instead of a generic placeholder.
+            FailureReason := ResponseText;
             exit(false);
+        end;
 
         // Mirror the single-env post-success record update, but without Message().
         BCEnvironment."Target Version" := TargetVersion;

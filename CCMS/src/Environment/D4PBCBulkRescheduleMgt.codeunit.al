@@ -16,8 +16,16 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         FetchCache: Dictionary of [Text, Text];
         AdminAPI: Interface "D4P IBC Admin API";
         AdminAPIInjected: Boolean;
+        // Staged across the TryApply [TryFunction] boundary: the Admin API's distinctive failure
+        // detail for the most recent apply. GetLastErrorText() is an unreliable channel for this
+        // (and is stubbed under al-runner), so the detail is carried out explicitly — mirroring the
+        // TempFetchBuffer staging pattern above — and preferred over GetLastErrorText in ApplyPlan.
+        LastApplyFailureReason: Text;
         UnknownErrorLbl: Label 'unknown error';
         EnvGoneErr: Label 'Environment %1 no longer exists in the local database.', Comment = '%1 = Environment Name';
+        // Shared between BuildPlan (stamps the reason) and AnyFetchFailure (detects it). Keeping a
+        // single label avoids a magic-string drift between where a fetch failure is written and read.
+        FetchFailedReasonLbl: Label 'Fetch failed: %1', Comment = '%1 = Error message from GetLastErrorText';
 
     /// <summary>
     /// Test seam: injects a custom API implementation. Intended for CCMS.Test only.
@@ -73,7 +81,14 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         TempPendingCheck.Reset();
         TempPendingCheck.SetRange(Result, TempPendingCheck.Result::Pending);
         if TempPendingCheck.IsEmpty() then begin
-            Message(NothingToRescheduleMsg);
+            // No actionable rows. But "every fetch failed" must NOT masquerade as "no updates
+            // available": that hides the per-env failure Reasons from the partner. When the plan
+            // carries at least one fetch-failure row, open the summary so those Reasons are visible;
+            // only the genuine no-updates case shows the generic message.
+            if AnyFetchFailure(TempPlan) then
+                ShowSummary(TempPlan)
+            else
+                Message(NothingToRescheduleMsg);
             exit;
         end;
 
@@ -111,8 +126,8 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         EntryNo: Integer;
         AvailableFlag: Boolean;
         FetchReason: Text;
-        FetchFailedLbl: Label 'Fetch failed: %1', Comment = '%1 = Error message from GetLastErrorText';
         NoUpdatesLbl: Label 'No updates available';
+        DefaultDatePastLbl: Label 'Default update date %1 has already passed and would be rejected; reschedule this environment manually.', Comment = '%1 = the latest selectable date that is now in the past';
     begin
         EnsureAdminAPI();
 
@@ -146,7 +161,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                 if FetchReason = '' then
                     FetchReason := UnknownErrorLbl;
                 TempPlan.Result := TempPlan.Result::Skipped;
-                TempPlan.Reason := CopyStr(StrSubstNo(FetchFailedLbl, FetchReason), 1, MaxStrLen(TempPlan.Reason));
+                TempPlan.Reason := CopyStr(StrSubstNo(FetchFailedReasonLbl, FetchReason), 1, MaxStrLen(TempPlan.Reason));
             end else begin
                 // Cache the raw JSON under the env name so AssistEdit drilldowns can re-parse
                 // without another API hit. Populated regardless of whether the fetch returned
@@ -177,6 +192,17 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                     // "Available" reflects the candidate's real availability flag, decoupled from
                     // whether a selectable date was returned.
                     TempPlan.Available := AvailableFlag;
+
+                    // The pre-filled default date is the deadline (Latest Selectable Date). If it is
+                    // already in the past it would be rejected by the dialog's date validation
+                    // (Selected Date < Today), so a partner accepting defaults would only discover the
+                    // failure at the summary. Flag it up-front instead of leaving a silent Pending row.
+                    // Mirror the dialog exactly: a 0D default (genuinely available, no selectable date)
+                    // is NOT a past date and must stay actionable.
+                    if (DefaultDate <> 0D) and (DefaultDate < Today()) then begin
+                        TempPlan.Result := TempPlan.Result::Skipped;
+                        TempPlan.Reason := CopyStr(StrSubstNo(DefaultDatePastLbl, DefaultDate), 1, MaxStrLen(TempPlan.Reason));
+                    end;
                 end;
             end;
 
@@ -241,11 +267,16 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
                     Commit();
                     OnAfterApplyReschedule(TempPlan);
                 end else begin
+                    Clear(LastApplyFailureReason);
                     if TryApply(TempPlan, BCEnv) then begin
                         TempPlan.Result := TempPlan.Result::Succeeded;
                         TempPlan.Reason := '';
                     end else begin
-                        ApplyReason := GetLastErrorText();
+                        // Prefer the Admin API's distinctive detail staged by TryApply; fall back to
+                        // the raw error text, then to a generic placeholder.
+                        ApplyReason := LastApplyFailureReason;
+                        if ApplyReason = '' then
+                            ApplyReason := GetLastErrorText();
                         if ApplyReason = '' then
                             ApplyReason := UnknownErrorLbl;
                         TempPlan.Result := TempPlan.Result::Failed;
@@ -313,6 +344,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     local procedure TryApply(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var BCEnv: Record "D4P BC Environment")
     var
         APIFailureErr: Label 'Admin API reported the reschedule request failed.';
+        FailureReason: Text;
         Success: Boolean;
     begin
         Success := AdminAPI.SelectTargetVersion(
@@ -321,9 +353,19 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
             PlanLine."Selected Date",
             PlanLine."Expected Month",
             PlanLine."Expected Year",
-            PlanLine.Available);
+            PlanLine.Available,
+            FailureReason);
+        // Stage the Admin API's distinctive failure detail out of the TryFunction so ApplyPlan can
+        // record it in the plan row's Reason (preferred over GetLastErrorText, which is unreliable
+        // here). Set on every call so a previous env's detail can never leak into this one.
+        LastApplyFailureReason := FailureReason;
         if not Success then
-            Error(APIFailureErr);
+            // Raise so the [TryFunction] reports failure. Use '%1' so a body containing '%' or '{}'
+            // is not misread as a format string; fall back to the generic message with no detail.
+            if FailureReason <> '' then
+                Error('%1', FailureReason)
+            else
+                Error(APIFailureErr);
     end;
 
     /// <summary>
@@ -363,6 +405,33 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     procedure GetFetchCache(var TargetCache: Dictionary of [Text, Text])
     begin
         TargetCache := FetchCache;
+    end;
+
+    /// <summary>
+    /// (Bug C2) Returns true iff the plan contains at least one fetch-failure Skipped row — a row
+    /// whose Reason was stamped by BuildPlan with the shared "Fetch failed: ..." prefix. Lets
+    /// RunBulkReschedule distinguish an all-fetch-failed run (which must surface the per-env reasons)
+    /// from a genuine no-updates run (which shows NothingToRescheduleMsg). A genuine "No updates
+    /// available" Skipped row does NOT match. Scans a copy so the caller's position/filters are intact.
+    /// </summary>
+    procedure AnyFetchFailure(var TempPlan: Record "D4P BC Reschedule Plan Line" temporary): Boolean
+    var
+        TempScan: Record "D4P BC Reschedule Plan Line" temporary;
+        FetchFailedPrefix: Text;
+    begin
+        // Derive the prefix from the same label BuildPlan stamps — no magic string to drift.
+        FetchFailedPrefix := StrSubstNo(FetchFailedReasonLbl, '');
+
+        TempScan.Copy(TempPlan, true);
+        TempScan.Reset();
+        TempScan.SetRange(Result, TempScan.Result::Skipped);
+        if TempScan.FindSet() then
+            repeat
+                if StrPos(TempScan.Reason, FetchFailedPrefix) = 1 then
+                    exit(true);
+            until TempScan.Next() = 0;
+
+        exit(false);
     end;
 
     /// <summary>
