@@ -8,6 +8,7 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
     var
         APIHelper: Codeunit "D4P BC API Helper";
         Parser: Codeunit "D4P BC Update Parser";
+        FailedToFetchErr: Label 'Failed to fetch available updates: %1', Comment = '%1 = Error message';
 
     /// <summary>
     /// Default implementation: fetches available updates via Admin API v2.28 and
@@ -17,7 +18,6 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
     procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary; var RawResponse: Text)
     var
         BCTenant: Record "D4P BC Tenant";
-        FailedToFetchErr: Label 'Failed to fetch available updates: %1', Comment = '%1 = Error message';
         Endpoint: Text;
         ResponseText: Text;
     begin

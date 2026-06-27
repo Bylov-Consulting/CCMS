@@ -7,25 +7,28 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         // [TryFunction] semantics make it awkward to pass a var Record param to a
         // function that also invokes an interface method, so we stage the result here.
         TempFetchBuffer: Record "D4P BC Available Update" temporary;
-        // Companion to TempFetchBuffer: the raw JSON payload for the most recent fetch,
-        // staged across the TryFunction boundary so BuildPlan can push it into the per-env
-        // cache consumed by the dialog's AssistEdit drilldown.
-        TempFetchRawResponse: Text;
         // Per-env raw JSON cache populated during BuildPlan and forwarded to the dialog so
         // AssistEdit drilldowns can re-parse without a second API round-trip.
         FetchCache: Dictionary of [Text, Text];
         AdminAPI: Interface "D4P IBC Admin API";
+        // Companion to TempFetchBuffer: the raw JSON payload for the most recent fetch,
+        // staged across the TryFunction boundary so BuildPlan can push it into the per-env
+        // cache consumed by the dialog's AssistEdit drilldown.
+        TempFetchRawResponse: Text;
         AdminAPIInjected: Boolean;
-        // Staged across the TryApply [TryFunction] boundary: the Admin API's distinctive failure
-        // detail for the most recent apply. GetLastErrorText() is an unreliable channel for this
-        // (and is stubbed under al-runner), so the detail is carried out explicitly — mirroring the
-        // TempFetchBuffer staging pattern above — and preferred over GetLastErrorText in ApplyPlan.
-        LastApplyFailureReason: Text;
         UnknownErrorLbl: Label 'unknown error';
-        EnvGoneErr: Label 'Environment %1 no longer exists in the local database.', Comment = '%1 = Environment Name';
         // Shared between BuildPlan (stamps the reason) and AnyFetchFailure (detects it). Keeping a
         // single label avoids a magic-string drift between where a fetch failure is written and read.
         FetchFailedReasonLbl: Label 'Fetch failed: %1', Comment = '%1 = Error message from GetLastErrorText';
+        NoSelectionErr: Label 'Select one or more environments before bulk rescheduling.';
+        ConfirmMsg: Label 'Reschedule updates for %1 environment(s)?', Comment = '%1 = Number of environments';
+        FetchingMsg: Label 'Fetching available updates for the selected environments...';
+        NothingToRescheduleMsg: Label 'Nothing to reschedule — none of the selected environments has an update available.';
+        NoUpdatesLbl: Label 'No updates available';
+        DefaultDatePastLbl: Label 'Default update date %1 has already passed and would be rejected; reschedule this environment manually.', Comment = '%1 = the latest selectable date that is now in the past';
+        SkippedBySubscriberLbl: Label 'Skipped by subscriber';
+        EnvGoneErr: Label 'Environment %1 no longer exists in the local database.', Comment = '%1 = Environment Name';
+        APIFailureErr: Label 'Admin API reported the reschedule request failed.';
 
     /// <summary>
     /// Test seam: injects a custom API implementation. Intended for CCMS.Test only.
@@ -35,7 +38,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     /// implementation would be used for every subsequent API call in this session.
     /// </summary>
     /// <param name="NewAPI">The implementation to use for all subsequent API calls.</param>
-    procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
+    internal procedure SetAdminAPI(NewAPI: Interface "D4P IBC Admin API")
     begin
         AdminAPI := NewAPI;
         AdminAPIInjected := true;
@@ -53,10 +56,6 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         FetchDialog: Dialog;
         DialogFetchCache: Dictionary of [Text, Text];
         EnvCount: Integer;
-        NoSelectionErr: Label 'Select one or more environments before bulk rescheduling.';
-        ConfirmMsg: Label 'Reschedule updates for %1 environment(s)?', Comment = '%1 = Number of environments';
-        FetchingMsg: Label 'Fetching available updates for the selected environments...';
-        NothingToRescheduleMsg: Label 'Nothing to reschedule — none of the selected environments has an update available.';
     begin
         EnsureAdminAPI();
 
@@ -126,8 +125,6 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
         EntryNo: Integer;
         AvailableFlag: Boolean;
         FetchReason: Text;
-        NoUpdatesLbl: Label 'No updates available';
-        DefaultDatePastLbl: Label 'Default update date %1 has already passed and would be rejected; reschedule this environment manually.', Comment = '%1 = the latest selectable date that is now in the past';
     begin
         EnsureAdminAPI();
 
@@ -212,20 +209,38 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
 
     /// <summary>
     /// Iterates TempPlan rows where Result = Pending. For each:
-    ///  - Publishes OnBeforeApplyReschedule with Skip byref.
+    ///  - Publishes OnBeforeApplyReschedule (with a COPY of the row) and a Skip byref.
     ///  - If Skip=true: marks Skipped with 'Skipped by subscriber', continues.
-    ///  - Else calls TryApply which invokes AdminAPI.SelectTargetVersion.
-    ///  - On success marks Succeeded; on failure marks Failed with GetLastErrorText reason.
-    ///  - Commit() after each apply for skip-and-continue durability across mid-run
-    ///    hard failures (mirrors the plan's documented skip-and-continue contract).
-    ///  - Publishes OnAfterApplyReschedule regardless of outcome.
+    ///  - Else applies the env directly via AdminAPI.SelectTargetVersion (ApplyEnv), then —
+    ///    only on success — durably commits that env's write via the Codeunit.Run sub-operation
+    ///    D4P BC Reschedule Apply Step.
+    ///  - On success marks Succeeded; on failure marks Failed with the apply's distinctive reason.
+    ///  - Publishes OnAfterApplyReschedule (with a COPY of the row) regardless of outcome.
+    ///
+    /// Why the apply is NOT itself wrapped in Codeunit.Run (regression fix): on a real BC engine
+    /// the injected Admin API mock's recorded calls and the apply outcome did not survive a
+    /// Codeunit.Run boundary back to this orchestrator, so every env read back as failed/not-applied
+    /// (al-runner cannot reproduce this — it lacks real Codeunit.Run isolation). The observable apply
+    /// therefore runs here, in the orchestrator's own context, where SelectTargetVersion's return
+    /// value, its FailureReason out-param, and the mock's effects are all directly readable.
+    ///
+    /// Per-env durability (R-C8): the bare Commit() that makes a successful env durable lives in the
+    /// Run-invoked D4P BC Reschedule Apply Step, not as a raw Commit in this loop body. Each
+    /// successful env commits independently, so the skip-and-continue contract holds — a later env's
+    /// failure never rolls back an already-committed earlier env. A failed env never reaches the
+    /// commit step. TempPlan is temporary, so its row updates are never the thing being made durable —
+    /// only the real D4P BC Environment write is.
+    ///
+    /// Collected-error handling (R-C7): ApplyEnv runs under ErrorBehavior::Collect, so a hard error
+    /// raised inside the apply is captured as a structured ErrorInfo that feeds the row Reason
+    /// (preferring the Admin API's distinctive out-param detail) instead of an opaque placeholder.
     /// </summary>
     procedure ApplyPlan(var TempPlan: Record "D4P BC Reschedule Plan Line" temporary)
     var
-        BCEnv: Record "D4P BC Environment";
+        TempEventLine: Record "D4P BC Reschedule Plan Line" temporary;
+        CommitStep: Codeunit "D4P BC Reschedule Apply Step";
         Skip: Boolean;
         ApplyReason: Text;
-        SkippedBySubscriberLbl: Label 'Skipped by subscriber';
     begin
         EnsureAdminAPI();
 
@@ -238,59 +253,114 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
 
         repeat
             Skip := false;
-            OnBeforeApplyReschedule(TempPlan, Skip);
+            // Hand subscribers a COPY of the current row (R-C9). Record assignment snapshots the
+            // field values into a record variable with its own buffer, so a subscriber that
+            // navigates the record cannot disturb this loop's live cursor.
+            TempEventLine := TempPlan;
+            OnBeforeApplyReschedule(TempEventLine, Skip);
 
             if Skip then begin
                 TempPlan.Result := TempPlan.Result::Skipped;
                 TempPlan.Reason := CopyStr(SkippedBySubscriberLbl, 1, MaxStrLen(TempPlan.Reason));
-                TempPlan.Modify(false);
-                // Commit() — partial progress must be durable per skip-and-continue contract.
-                Commit();
-                OnAfterApplyReschedule(TempPlan);
             end else begin
-                // Re-fetch the environment record so SelectTargetVersion can Modify it.
-                // SetLoadFields constrains reads AND the set available for a subsequent
-                // Modify — include every field SelectTargetVersion touches (read or write):
-                //   Reads: "Customer No.", "Tenant ID", "Application Family", Name
-                //   Writes: "Target Version", "Selected DateTime", "Expected Availability"
-                BCEnv.SetLoadFields(
-                    "Customer No.", "Tenant ID", "Application Family", Name,
-                    "Target Version", "Selected DateTime", "Expected Availability");
-                if not BCEnv.Get(TempPlan."Customer No.", TempPlan."Tenant ID", TempPlan."Environment Name") then begin
-                    // Environment was deleted between BuildPlan and ApplyPlan (or from the UI
-                    // mid-run). Emit an explicit, actionable reason instead of silently falling
-                    // through to an opaque downstream "BCTenant.Get failed" inside the interface.
-                    TempPlan.Result := TempPlan.Result::Failed;
-                    TempPlan.Reason := CopyStr(StrSubstNo(EnvGoneErr, TempPlan."Environment Name"), 1, MaxStrLen(TempPlan.Reason));
-                    TempPlan.Modify(false);
-                    // Commit() — partial progress must be durable per skip-and-continue contract.
-                    Commit();
-                    OnAfterApplyReschedule(TempPlan);
+                ApplyReason := '';
+                if ApplyEnv(TempPlan, ApplyReason) then begin
+                    // Apply succeeded for this env. Durably persist its D4P BC Environment write
+                    // as an encapsulated atomic unit (R-C8) — no raw Commit in this loop body.
+                    CommitStep.Run();
+                    TempPlan.Result := TempPlan.Result::Succeeded;
+                    TempPlan.Reason := '';
                 end else begin
-                    Clear(LastApplyFailureReason);
-                    if TryApply(TempPlan, BCEnv) then begin
-                        TempPlan.Result := TempPlan.Result::Succeeded;
-                        TempPlan.Reason := '';
-                    end else begin
-                        // Prefer the Admin API's distinctive detail staged by TryApply; fall back to
-                        // the raw error text, then to a generic placeholder.
-                        ApplyReason := LastApplyFailureReason;
-                        if ApplyReason = '' then
-                            ApplyReason := GetLastErrorText();
-                        if ApplyReason = '' then
-                            ApplyReason := UnknownErrorLbl;
-                        TempPlan.Result := TempPlan.Result::Failed;
-                        TempPlan.Reason := CopyStr(ApplyReason, 1, MaxStrLen(TempPlan.Reason));
-                    end;
-                    TempPlan.Modify(false);
-                    // Commit() — partial progress must be durable per skip-and-continue contract.
-                    Commit();
-                    OnAfterApplyReschedule(TempPlan);
+                    // Reason precedence: the Admin API's distinctive detail (or a collected
+                    // ErrorInfo) surfaced by ApplyEnv, then a generic placeholder.
+                    if ApplyReason = '' then
+                        ApplyReason := UnknownErrorLbl;
+                    TempPlan.Result := TempPlan.Result::Failed;
+                    TempPlan.Reason := CopyStr(ApplyReason, 1, MaxStrLen(TempPlan.Reason));
                 end;
             end;
+
+            TempPlan.Modify(false);
+
+            // Publish OnAfter with a fresh COPY reflecting the final outcome (R-C9).
+            TempEventLine := TempPlan;
+            OnAfterApplyReschedule(TempEventLine);
         until TempPlan.Next() = 0;
 
         TempPlan.Reset();
+    end;
+
+    /// <summary>
+    /// Applies one plan row's env directly through the (possibly mocked) Admin API seam and reports
+    /// the outcome to the caller — keeping the apply observable to the orchestrator and its tests
+    /// (no Codeunit.Run boundary between the mock and this method's reader).
+    ///
+    /// Runs under ErrorBehavior::Collect (R-C7): a hard error raised during the apply is captured as
+    /// a structured ErrorInfo. The FailureReason out-param prefers the Admin API's distinctive
+    /// out-param detail, then a collected ErrorInfo message, then a generic fallback (set by the
+    /// caller). Performs no Commit — durability is the caller's CommitStep concern.
+    /// </summary>
+    /// <param name="PlanLine">The plan row whose env should be (re-)applied.</param>
+    /// <param name="FailureReason">Out: distinctive failure detail when the apply fails (empty on success).</param>
+    /// <returns>true if the env applied successfully; false if it failed.</returns>
+    [ErrorBehavior(ErrorBehavior::Collect)]
+    local procedure ApplyEnv(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var FailureReason: Text): Boolean
+    var
+        BCEnv: Record "D4P BC Environment";
+        CollectedErr: ErrorInfo;
+        ApiFailureReason: Text;
+        Applied: Boolean;
+    begin
+        ClearCollectedErrors();
+        FailureReason := '';
+
+        // Re-fetch the environment so SelectTargetVersion can Modify it. SetLoadFields constrains
+        // reads AND the set available for a subsequent Modify — include every field
+        // SelectTargetVersion touches (read or write):
+        //   Reads: "Customer No.", "Tenant ID", "Application Family", Name
+        //   Writes: "Target Version", "Selected DateTime", "Expected Availability"
+        BCEnv.SetLoadFields(
+            "Customer No.", "Tenant ID", "Application Family", Name,
+            "Target Version", "Selected DateTime", "Expected Availability");
+        if not BCEnv.Get(PlanLine."Customer No.", PlanLine."Tenant ID", PlanLine."Environment Name") then begin
+            // Environment was deleted between BuildPlan and ApplyPlan (or from the UI mid-run).
+            // Emit an explicit, actionable reason instead of an opaque downstream failure.
+            FailureReason := StrSubstNo(EnvGoneErr, PlanLine."Environment Name");
+            exit(false);
+        end;
+
+        Applied := AdminAPI.SelectTargetVersion(
+            BCEnv,
+            PlanLine."Target Version",
+            PlanLine."Selected Date",
+            PlanLine."Expected Month",
+            PlanLine."Expected Year",
+            PlanLine.Available,
+            ApiFailureReason);
+
+        if HasCollectedErrors() then begin
+            // A hard error was raised inside the apply. Prefer the Admin API's distinctive
+            // out-param detail; otherwise feed the structured collected ErrorInfo into the Reason.
+            FailureReason := ApiFailureReason;
+            if FailureReason = '' then
+                foreach CollectedErr in GetCollectedErrors() do
+                    if FailureReason = '' then
+                        FailureReason := CollectedErr.Message();
+            ClearCollectedErrors();
+            exit(false);
+        end;
+
+        if not Applied then begin
+            // Graceful failure (e.g. HTTP non-2xx): SelectTargetVersion returned false carrying
+            // the Admin API's distinctive detail in the out-param. Fall back to the generic
+            // message only when no detail was supplied.
+            FailureReason := ApiFailureReason;
+            if FailureReason = '' then
+                FailureReason := APIFailureErr;
+            exit(false);
+        end;
+
+        exit(true);
     end;
 
     /// <summary>
@@ -322,6 +392,12 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     /// <summary>
     /// Publishes before each apply. Subscribers set Skip := true to veto an individual env.
     /// </summary>
+    /// <remarks>
+    /// The parameter keeps the name <c>PlanLine</c>: AL binds event-subscriber parameters by name
+    /// (renaming the publisher parameter raises AL0282 in every existing subscriber). The R-C9
+    /// hardening is instead delivered by the publisher passing a COPY of the row (see ApplyPlan),
+    /// so a navigating subscriber cannot disturb the live apply cursor regardless of the name.
+    /// </remarks>
     [IntegrationEvent(false, false)]
     local procedure OnBeforeApplyReschedule(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var Skip: Boolean)
     begin
@@ -330,42 +406,10 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     /// <summary>
     /// Publishes after each apply. For observability / audit sinks.
     /// </summary>
+    /// <remarks>Parameter name <c>PlanLine</c> retained for subscriber binding — see OnBeforeApplyReschedule.</remarks>
     [IntegrationEvent(false, false)]
     local procedure OnAfterApplyReschedule(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary)
     begin
-    end;
-
-    /// <summary>
-    /// [TryFunction] wrapper around AdminAPI.SelectTargetVersion. Converts a false return
-    /// into an Error so the orchestrator sees a uniform success/failure signal via the
-    /// TryFunction result and GetLastErrorText().
-    /// </summary>
-    [TryFunction]
-    local procedure TryApply(var PlanLine: Record "D4P BC Reschedule Plan Line" temporary; var BCEnv: Record "D4P BC Environment")
-    var
-        APIFailureErr: Label 'Admin API reported the reschedule request failed.';
-        FailureReason: Text;
-        Success: Boolean;
-    begin
-        Success := AdminAPI.SelectTargetVersion(
-            BCEnv,
-            PlanLine."Target Version",
-            PlanLine."Selected Date",
-            PlanLine."Expected Month",
-            PlanLine."Expected Year",
-            PlanLine.Available,
-            FailureReason);
-        // Stage the Admin API's distinctive failure detail out of the TryFunction so ApplyPlan can
-        // record it in the plan row's Reason (preferred over GetLastErrorText, which is unreliable
-        // here). Set on every call so a previous env's detail can never leak into this one.
-        LastApplyFailureReason := FailureReason;
-        if not Success then
-            // Raise so the [TryFunction] reports failure. Use '%1' so a body containing '%' or '{}'
-            // is not misread as a format string; fall back to the generic message with no detail.
-            if FailureReason <> '' then
-                Error('%1', FailureReason)
-            else
-                Error(APIFailureErr);
     end;
 
     /// <summary>

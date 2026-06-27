@@ -17,8 +17,6 @@ codeunit 62006 "D4P BC Update Parser"
         JsonToken: JsonToken;
         JsonTokenLoop: JsonToken;
         JsonValue: JsonValue;
-        ParsedDateTime: DateTime;
-        ParsedDate: Date;
         EntryNo: Integer;
     begin
         TempAvailableUpdate.Reset();
@@ -75,31 +73,35 @@ codeunit 62006 "D4P BC Update Parser"
             if JsonObjectLoop.Get('scheduleDetails', JsonToken) then begin
                 JsonScheduleDetails := JsonToken.AsObject();
 
-                // selectedDateTime
+                // selectedDateTime — parse the calendar date straight from the ISO string so a
+                // UTC-midnight value (e.g. "...T00:00:00Z") does not roll back a day on a BC
+                // server west of UTC, which AsDateTime().Date() would do.
                 if JsonScheduleDetails.Get('selectedDateTime', JsonToken) then begin
                     JsonValue := JsonToken.AsValue();
                     if not JsonValue.IsNull() then
-                        TempAvailableUpdate."Selected DateTime" := JsonValue.AsDateTime().Date();
+                        TempAvailableUpdate."Selected DateTime" := IsoTextToDate(JsonValue.AsText());
                 end;
 
                 // Latest selectable date — API quirk: either latestSelectableDateTime (full ISO
                 // DateTime, new nested shape) or legacy latestSelectableDate (date-only string
-                // like "2026-06-01"). Both map to the same Date field, but require different
-                // parsing: NavDateTime rejects date-only strings, so AsDate() must be used for
-                // the legacy flat key while AsDateTime().Date() is used for the full ISO value.
+                // like "2026-06-01"). Both map to the same Date field.
+                //
+                // latestSelectableDateTime: parse the calendar date directly from the ISO string
+                // instead of going through AsDateTime().Date(). This is an intentional
+                // timezone-correctness FIX (NOT behaviour-preserving): a UTC-midnight value such
+                // as "2026-06-01T00:00:00Z" would otherwise roll back to 2026-05-31 when
+                // materialised on a BC server west of UTC.
                 if JsonScheduleDetails.Get('latestSelectableDateTime', JsonToken) then begin
                     JsonValue := JsonToken.AsValue();
-                    if not JsonValue.IsNull() then begin
-                        ParsedDateTime := JsonValue.AsDateTime();
-                        TempAvailableUpdate."Latest Selectable Date" := ParsedDateTime.Date();
-                    end;
+                    if not JsonValue.IsNull() then
+                        TempAvailableUpdate."Latest Selectable Date" := IsoTextToDate(JsonValue.AsText());
                 end else
+                    // Legacy flat key: AsDate() reads the date-only string directly. A date-only
+                    // value carries no time-of-day or timezone, so there is no day-rollover risk.
                     if JsonScheduleDetails.Get('latestSelectableDate', JsonToken) then begin
                         JsonValue := JsonToken.AsValue();
-                        if not JsonValue.IsNull() then begin
-                            ParsedDate := JsonValue.AsDate();
-                            TempAvailableUpdate."Latest Selectable Date" := ParsedDate;
-                        end;
+                        if not JsonValue.IsNull() then
+                            TempAvailableUpdate."Latest Selectable Date" := JsonValue.AsDate();
                     end;
 
                 // ignoreUpdateWindow
@@ -117,21 +119,13 @@ codeunit 62006 "D4P BC Update Parser"
                 end;
             end;
 
-            // Nested expectedAvailability (unreleased versions)
+            // Nested expectedAvailability (unreleased versions). Read the child fields
+            // tolerantly: the Admin API has shipped both "month"/"year" and
+            // "expectedReleaseMonth"/"expectedReleaseYear" spellings, so accept either.
             if JsonObjectLoop.Get('expectedAvailability', JsonToken) then begin
                 JsonExpectedAvailability := JsonToken.AsObject();
-
-                if JsonExpectedAvailability.Get('month', JsonToken) then begin
-                    JsonValue := JsonToken.AsValue();
-                    if not JsonValue.IsNull() then
-                        TempAvailableUpdate."Expected Month" := JsonValue.AsInteger();
-                end;
-
-                if JsonExpectedAvailability.Get('year', JsonToken) then begin
-                    JsonValue := JsonToken.AsValue();
-                    if not JsonValue.IsNull() then
-                        TempAvailableUpdate."Expected Year" := JsonValue.AsInteger();
-                end;
+                TempAvailableUpdate."Expected Month" := ReadIntChild(JsonExpectedAvailability, 'month', 'expectedReleaseMonth');
+                TempAvailableUpdate."Expected Year" := ReadIntChild(JsonExpectedAvailability, 'year', 'expectedReleaseYear');
             end;
 
             TempAvailableUpdate.Insert(false);
@@ -185,20 +179,20 @@ codeunit 62006 "D4P BC Update Parser"
         end;
     end;
 
-    local procedure RankAvailable(var Candidate: Record "D4P BC Available Update" temporary; var TempBest: Record "D4P BC Available Update" temporary; var HasBest: Boolean)
+    local procedure RankAvailable(var TempCandidate: Record "D4P BC Available Update" temporary; var TempBest: Record "D4P BC Available Update" temporary; var HasBest: Boolean)
     begin
-        if (not HasBest) or (CompareVersions(Candidate."Target Version", TempBest."Target Version") > 0) then begin
-            TempBest := Candidate;
+        if (not HasBest) or (CompareVersions(TempCandidate."Target Version", TempBest."Target Version") > 0) then begin
+            TempBest := TempCandidate;
             HasBest := true;
         end;
     end;
 
-    local procedure RankUnreleased(var Candidate: Record "D4P BC Available Update" temporary; var TempBest: Record "D4P BC Available Update" temporary; var HasBest: Boolean)
+    local procedure RankUnreleased(var TempCandidate: Record "D4P BC Available Update" temporary; var TempBest: Record "D4P BC Available Update" temporary; var HasBest: Boolean)
     var
         VersionCompare: Integer;
     begin
         if not HasBest then begin
-            TempBest := Candidate;
+            TempBest := TempCandidate;
             HasBest := true;
             exit;
         end;
@@ -206,23 +200,23 @@ codeunit 62006 "D4P BC Update Parser"
         // Month/Year is the primary ranking for unreleased candidates because the Admin API
         // may return identical "Target Version" placeholders for several upcoming months.
         // Only fall back to version comparison on an exact month/year tie.
-        if Candidate."Expected Year" > TempBest."Expected Year" then begin
-            TempBest := Candidate;
+        if TempCandidate."Expected Year" > TempBest."Expected Year" then begin
+            TempBest := TempCandidate;
             exit;
         end;
-        if Candidate."Expected Year" < TempBest."Expected Year" then
+        if TempCandidate."Expected Year" < TempBest."Expected Year" then
             exit;
 
-        if Candidate."Expected Month" > TempBest."Expected Month" then begin
-            TempBest := Candidate;
+        if TempCandidate."Expected Month" > TempBest."Expected Month" then begin
+            TempBest := TempCandidate;
             exit;
         end;
-        if Candidate."Expected Month" < TempBest."Expected Month" then
+        if TempCandidate."Expected Month" < TempBest."Expected Month" then
             exit;
 
-        VersionCompare := CompareVersions(Candidate."Target Version", TempBest."Target Version");
+        VersionCompare := CompareVersions(TempCandidate."Target Version", TempBest."Target Version");
         if VersionCompare > 0 then
-            TempBest := Candidate;
+            TempBest := TempCandidate;
     end;
 
     /// <summary>
@@ -293,5 +287,63 @@ codeunit 62006 "D4P BC Update Parser"
             exit(Value);
         // Non-numeric (pre-release tag) sorts below any numeric segment.
         exit(-1);
+    end;
+
+    /// <summary>
+    /// Reads an integer child value under either of two accepted key spellings (the Admin API
+    /// has shipped both). Returns 0 when neither key is present or the value is null.
+    /// </summary>
+    local procedure ReadIntChild(JsonParent: JsonObject; PrimaryKey: Text; AltKey: Text): Integer
+    var
+        JsonToken: JsonToken;
+        JsonValue: JsonValue;
+    begin
+        if not JsonParent.Get(PrimaryKey, JsonToken) then
+            if not JsonParent.Get(AltKey, JsonToken) then
+                exit(0);
+
+        JsonValue := JsonToken.AsValue();
+        if JsonValue.IsNull() then
+            exit(0);
+
+        exit(JsonValue.AsInteger());
+    end;
+
+    /// <summary>
+    /// Extracts the calendar date from an ISO 8601 string by reading the leading "YYYY-MM-DD"
+    /// portion directly. This deliberately avoids DateTime conversion: a UTC instant materialised
+    /// in server-local time can shift the date by a day, but the calendar date in the payload is
+    /// exactly what we want to store. Returns 0D for empty or unparseable input.
+    /// </summary>
+    local procedure IsoTextToDate(IsoText: Text): Date
+    var
+        DateParts: List of [Text];
+        DatePart: Text;
+        Year: Integer;
+        Month: Integer;
+        Day: Integer;
+        TPos: Integer;
+    begin
+        if IsoText = '' then
+            exit(0D);
+
+        TPos := StrPos(IsoText, 'T');
+        if TPos > 0 then
+            DatePart := CopyStr(IsoText, 1, TPos - 1)
+        else
+            DatePart := IsoText;
+
+        DateParts := DatePart.Split('-');
+        if DateParts.Count() < 3 then
+            exit(0D);
+
+        if not Evaluate(Year, DateParts.Get(1)) then
+            exit(0D);
+        if not Evaluate(Month, DateParts.Get(2)) then
+            exit(0D);
+        if not Evaluate(Day, DateParts.Get(3)) then
+            exit(0D);
+
+        exit(DMY2Date(Day, Month, Year));
     end;
 }

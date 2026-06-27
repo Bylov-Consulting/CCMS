@@ -46,13 +46,13 @@ page 62033 "D4P Bulk Reschedule Summary"
                 }
                 field("Expected Month"; Rec."Expected Month")
                 {
-                    Visible = not Rec.Available;
+                    Visible = ExpectedColumnsVisible;
                     StyleExpr = RowStyleExpr;
                     ToolTip = 'Specifies the expected release month for unreleased target versions.';
                 }
                 field("Expected Year"; Rec."Expected Year")
                 {
-                    Visible = not Rec.Available;
+                    Visible = ExpectedColumnsVisible;
                     StyleExpr = RowStyleExpr;
                     ToolTip = 'Specifies the expected release year for unreleased target versions.';
                 }
@@ -127,6 +127,7 @@ page 62033 "D4P Bulk Reschedule Summary"
         AdminAPI: Interface "D4P IBC Admin API";
         OrchestratorSet: Boolean;
         AdminAPIInjected: Boolean;
+        ExpectedColumnsVisible: Boolean;
         RowStyleExpr: Text;
         ResultStyleExpr: Text;
         CaptionLbl: Label 'Bulk Reschedule Complete — %1 Succeeded, %2 Skipped, %3 Failed', Comment = '%1 Succeeded count, %2 Skipped count, %3 Failed count';
@@ -152,11 +153,19 @@ page 62033 "D4P Bulk Reschedule Summary"
         Rec.Reset();
         Rec.DeleteAll(false);
 
+        // Page-level column visibility: show the Expected Month/Year columns when ANY row
+        // is unreleased. A column-level "Visible = not Rec.Available" expression is evaluated
+        // against a single row and hides the column for the entire grid, so a mixed plan lost
+        // those columns. Reflect the whole plan in a page variable instead.
+        ExpectedColumnsVisible := false;
+
         TempSourcePlan.Reset();
         if TempSourcePlan.FindSet() then
             repeat
                 Rec := TempSourcePlan;
                 Rec.Insert(false);
+                if not TempSourcePlan.Available then
+                    ExpectedColumnsVisible := true;
             until TempSourcePlan.Next() = 0;
     end;
 

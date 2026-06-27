@@ -95,6 +95,9 @@ permissionset 62001 "D4P BC ADMIN READ"
         codeunit "D4P KQL Query Store Init" = X,
         codeunit "D4P Telemetry Helper" = X,
         codeunit "D4P BC Operations Helper" = X,
+        // The read-path JSON parsing now lives in this codeunit, so read-only users
+        // must be able to execute it (e.g. when viewing available updates).
+        codeunit "D4P BC Update Parser" = X,
 
         // Reports - needed for telemetry queries
         report "D4P Load Data" = X,

@@ -80,14 +80,14 @@ page 62032 "D4P Bulk Reschedule Dialog"
                 field("Expected Month"; Rec."Expected Month")
                 {
                     Editable = false;
-                    Visible = not Rec.Available;
+                    Visible = ExpectedColumnsVisible;
                     StyleExpr = RowStyleExpr;
                     ToolTip = 'Specifies the expected release month when the target version is unreleased.';
                 }
                 field("Expected Year"; Rec."Expected Year")
                 {
                     Editable = false;
-                    Visible = not Rec.Available;
+                    Visible = ExpectedColumnsVisible;
                     StyleExpr = RowStyleExpr;
                     ToolTip = 'Specifies the expected release year when the target version is unreleased.';
                 }
@@ -162,6 +162,7 @@ page 62032 "D4P Bulk Reschedule Dialog"
         FetchCache: Dictionary of [Text, Text];
         Accepted: Boolean;
         RowEditable: Boolean;
+        ExpectedColumnsVisible: Boolean;
         RowStyleExpr: Text;
         ResultStyleExpr: Text;
         NoUpdatesAvailableErr: Label 'No updates are available for environment %1.', Comment = '%1 = Environment Name';
@@ -184,11 +185,19 @@ page 62032 "D4P Bulk Reschedule Dialog"
         Rec.Reset();
         Rec.DeleteAll(false);
 
+        // Page-level column visibility: show the Expected Month/Year columns when ANY row
+        // is unreleased. A column-level "Visible = not Rec.Available" expression is evaluated
+        // against a single row and hides the column for the entire grid, so a mixed plan lost
+        // those columns. Reflect the whole plan in a page variable instead.
+        ExpectedColumnsVisible := false;
+
         TempSourcePlan.Reset();
         if TempSourcePlan.FindSet() then
             repeat
                 Rec := TempSourcePlan;
                 Rec.Insert(false);
+                if not TempSourcePlan.Available then
+                    ExpectedColumnsVisible := true;
             until TempSourcePlan.Next() = 0;
     end;
 
@@ -347,7 +356,8 @@ page 62032 "D4P Bulk Reschedule Dialog"
         if UpdateSelectionDialog.RunModal() <> Action::OK then
             exit;
 
-        UpdateSelectionDialog.GetSelectedVersion(TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear, LatestSelectableDate);
+        UpdateSelectionDialog.GetSelectedVersion(TargetVersion, SelectedDate, ExpectedMonth, ExpectedYear);
+        LatestSelectableDate := UpdateSelectionDialog.GetLatestSelectableDate();
 
         Rec."Target Version" := TargetVersion;
         Rec."Selected Date" := SelectedDate;
