@@ -119,6 +119,7 @@ permissionset 62000 "D4P BC ADMIN"
         codeunit "D4P BC Admin API" = X,
         codeunit "D4P BC Bulk Reschedule Mgt" = X,
         codeunit "D4P BC Update Parser" = X,
+        codeunit "D4P BC Reschedule Apply Step" = X,
 
         // Reports
         report "D4P Load Data" = X,
