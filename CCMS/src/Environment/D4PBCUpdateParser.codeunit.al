@@ -220,7 +220,7 @@ codeunit 62052 "D4P BC Update Parser"
     end;
 
     /// <summary>
-    /// Returns 1 if A > B, -1 if A < B, 0 if equal. Splits both strings on '.' and compares
+    /// Returns 1 if A &gt; B, -1 if A &lt; B, 0 if equal. Splits both strings on '.' and compares
     /// each segment numerically, so "27.10" correctly outranks "27.9". Non-numeric segments
     /// (e.g. pre-release tags the Admin API may return) sort as -1 — below any numeric
     /// segment — to keep the ordering predictable and deterministic.
