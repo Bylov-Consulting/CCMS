@@ -1,6 +1,6 @@
 namespace D4P.CCMS.Environment;
 
-enum 62007 "D4P Reschedule Result"
+enum 62054 "D4P Reschedule Result"
 {
     Extensible = true;
 

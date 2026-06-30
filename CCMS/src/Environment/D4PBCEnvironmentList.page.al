@@ -19,6 +19,7 @@ page 62003 "D4P BC Environment List"
     Editable = false;
     PageType = List;
     UsageCategory = Lists;
+    PopulateAllFields = true;
 
     layout
     {
@@ -179,7 +180,10 @@ page 62003 "D4P BC Environment List"
                     BCTenant: Record "D4P BC Tenant";
                     EnvironmentManagement: Codeunit "D4P BC Environment Mgt";
                 begin
-                    BCTenant.Get(Rec."Customer No.", Rec."Tenant ID");
+                    if Rec."Customer No." = '' then
+                        BCTenant.Get(Rec.GetFilter("Customer No."), Rec.GetFilter("Tenant ID"))
+                    else
+                        BCTenant.Get(Rec."Customer No.", Rec."Tenant ID");
                     EnvironmentManagement.GetEnvironments(BCTenant);
                 end;
             }

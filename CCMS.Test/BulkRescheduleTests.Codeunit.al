@@ -1165,7 +1165,7 @@ codeunit 62101 "D4P Bulk Reschedule Tests"
     //  failed, exactly once each, and never re-touches rows that already
     //  Succeeded or were Skipped.
     //
-    //  The page's RetryFailedRows is a LOCAL page procedure (page 62033) and is
+    //  The page's RetryFailedRows is a LOCAL page procedure (page 62055) and is
     //  not directly invocable from a test, nor drivable via TestPage because its
     //  SetData/SetOrchestrator/SetAdminAPI seams take var-record/codeunit params.
     //  This test reproduces RetryFailedRows' exact production sequence — filter

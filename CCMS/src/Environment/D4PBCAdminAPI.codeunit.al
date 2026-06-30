@@ -1,12 +1,12 @@
 namespace D4P.CCMS.Environment;
 
-using D4P.CCMS.General;
+using D4P.CCMS.Connector;
 using D4P.CCMS.Tenant;
 
-codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
+codeunit 62050 "D4P BC Admin API" implements "D4P IBC Admin API"
 {
     var
-        APIHelper: Codeunit "D4P BC API Helper";
+        AdminAPIClient: Codeunit D4PBCAdminAPIClient;
         Parser: Codeunit "D4P BC Update Parser";
         FailedToFetchErr: Label 'Failed to fetch available updates: %1', Comment = '%1 = Error message';
 
@@ -18,23 +18,25 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
     procedure GetAvailableUpdates(var BCEnvironment: Record "D4P BC Environment"; var TempAvailableUpdate: Record "D4P BC Available Update" temporary; var RawResponse: Text)
     var
         BCTenant: Record "D4P BC Tenant";
+        JsonResponse: JsonObject;
         Endpoint: Text;
-        ResponseText: Text;
     begin
-        // Only Tenant ID + Client ID are consumed downstream by SendAdminAPIRequest /
-        // GetOAuthToken / GetClientSecret. Narrow the fetch accordingly.
+        // Only Tenant ID + Client ID are consumed downstream by the Admin API client /
+        // OAuth token acquisition. Narrow the fetch accordingly.
         BCTenant.SetLoadFields("Tenant ID", "Client ID");
         BCTenant.Get(BCEnvironment."Customer No.", BCEnvironment."Tenant ID");
 
         Endpoint := '/applications/' + BCEnvironment."Application Family" +
                     '/environments/' + BCEnvironment.Name + '/updates';
-        if not APIHelper.SendAdminAPIRequest(BCTenant, 'GET', Endpoint, '', ResponseText) then
-            Error(FailedToFetchErr, ResponseText);
+
+        AdminAPIClient.SetTenant(BCTenant);
+        if not AdminAPIClient.Get(Endpoint, JsonResponse) then
+            Error(FailedToFetchErr, Format(JsonResponse));
 
         // Hand back the raw JSON so callers can cache it and skip the re-fetch on
         // subsequent AssistEdit drilldowns for the same env.
-        RawResponse := ResponseText;
-        Parser.ParseUpdatesJson(ResponseText, TempAvailableUpdate);
+        JsonResponse.WriteTo(RawResponse);
+        Parser.ParseUpdatesJson(RawResponse, TempAvailableUpdate);
     end;
 
     /// <summary>
@@ -50,12 +52,11 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
         JsonScheduleDetails: JsonObject;
         SelectedDateTime: DateTime;
         Endpoint: Text;
-        RequestBody: Text;
         ResponseText: Text;
     begin
         FailureReason := '';
-        // Only Tenant ID + Client ID are consumed downstream by SendAdminAPIRequest /
-        // GetOAuthToken / GetClientSecret. Narrow the fetch accordingly.
+        // Only Tenant ID + Client ID are consumed downstream by the Admin API client /
+        // OAuth token acquisition. Narrow the fetch accordingly.
         BCTenant.SetLoadFields("Tenant ID", "Client ID");
         BCTenant.Get(BCEnvironment."Customer No.", BCEnvironment."Tenant ID");
 
@@ -72,13 +73,12 @@ codeunit 62003 "D4P BC Admin API" implements "D4P IBC Admin API"
             JsonObject.Add('scheduleDetails', JsonScheduleDetails);
         end;
 
-        JsonObject.WriteTo(RequestBody);
-
         Endpoint := '/applications/' + BCEnvironment."Application Family" +
                     '/environments/' + BCEnvironment.Name +
                     '/updates/' + TargetVersion;
 
-        if not APIHelper.SendAdminAPIRequest(BCTenant, 'PATCH', Endpoint, RequestBody, ResponseText) then begin
+        AdminAPIClient.SetTenant(BCTenant);
+        if not AdminAPIClient.Patch(Endpoint, JsonObject, ResponseText) then begin
             // Surface the Admin API's HTTP status/body so the orchestrator can record WHY the
             // apply failed in the plan row's Reason, instead of a generic placeholder.
             FailureReason := ResponseText;

@@ -1,6 +1,6 @@
 namespace D4P.CCMS.Environment;
 
-table 62026 "D4P BC Reschedule Plan Line"
+table 62057 "D4P BC Reschedule Plan Line"
 {
     Caption = 'BC Reschedule Plan Line';
     TableType = Temporary;

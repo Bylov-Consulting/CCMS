@@ -5,7 +5,7 @@ namespace D4P.CCMS.Environment;
 /// in the caption, and offers Retry Failed / Copy to Clipboard / Close.
 /// Retry Failed delegates back through a caller-supplied orchestrator reference.
 /// </summary>
-page 62033 "D4P Bulk Reschedule Summary"
+page 62055 "D4P Bulk Reschedule Summary"
 {
     ApplicationArea = All;
     Caption = 'Bulk Reschedule Complete';

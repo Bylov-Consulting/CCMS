@@ -1,6 +1,6 @@
 namespace D4P.CCMS.Environment;
 
-codeunit 62004 "D4P BC Bulk Reschedule Mgt"
+codeunit 62051 "D4P BC Bulk Reschedule Mgt"
 {
     var
         // Per-env fetch result carried across the TryFunction boundary. AL's
@@ -45,8 +45,8 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
     end;
 
     /// <summary>
-    /// Full flow: empty-selection guard, Confirm, BuildPlan -> user review via page 62035 ->
-    /// ApplyPlan -> ShowSummary (page 62033).
+    /// Full flow: empty-selection guard, Confirm, BuildPlan -> user review via page 62056 ->
+    /// ApplyPlan -> ShowSummary (page 62055).
     /// </summary>
     procedure RunBulkReschedule(var BCEnvironment: Record "D4P BC Environment")
     var
@@ -438,7 +438,7 @@ codeunit 62004 "D4P BC Bulk Reschedule Mgt"
 
     /// <summary>
     /// Builds the composite cache key for an environment. Environments are keyed by
-    /// (Customer No., Tenant ID, Name); the dialog (page 62035) builds the SAME key when
+    /// (Customer No., Tenant ID, Name); the dialog (page 62056) builds the SAME key when
     /// reading the cache, so the format MUST stay in lockstep between the two objects.
     /// </summary>
     procedure FetchCacheKey(CustomerNo: Code[20]; TenantID: Guid; EnvName: Text): Text

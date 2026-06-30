@@ -12,7 +12,7 @@ namespace D4P.CCMS.Environment;
 /// The OK action is promoted to the ribbon so it is a big visible button
 /// without forcing users to open the Actions dropdown.
 /// </summary>
-page 62035 "D4P Bulk Reschedule Dialog"
+page 62056 "D4P Bulk Reschedule Dialog"
 {
     ApplicationArea = All;
     Caption = 'Bulk Reschedule Updates';

@@ -1,6 +1,6 @@
 namespace D4P.CCMS.Environment;
 
-codeunit 62006 "D4P BC Update Parser"
+codeunit 62052 "D4P BC Update Parser"
 {
     /// <summary>
     /// Pure parser: JSON response text to temporary "D4P BC Available Update" rows.
