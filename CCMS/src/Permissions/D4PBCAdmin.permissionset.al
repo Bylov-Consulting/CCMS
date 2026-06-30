@@ -3,6 +3,7 @@ namespace D4P.CCMS.Permissions;
 using D4P.CCMS.Auth;
 using D4P.CCMS.Backup;
 using D4P.CCMS.Capacity;
+using D4P.CCMS.Connector.RestClientOAuth;
 using D4P.CCMS.Customer;
 using D4P.CCMS.Environment;
 using D4P.CCMS.Extension;
@@ -43,6 +44,9 @@ permissionset 62000 "D4P BC ADMIN"
         tabledata "D4P BC Environment Operation" = RIMD,
         tabledata "D4P BC Reschedule Plan Line" = RIMD,
         tabledata "D4P BC Partner Center" = RIMD,
+        tabledata "D4P Entra App Registration" = RIMD,
+        tabledata "D4P Entra Certificate" = RIMD,
+        tabledata "D4P Entra Secret" = RIMD,
 
         // Table Objects
         table "D4P BC Customer" = X,
@@ -67,6 +71,9 @@ permissionset 62000 "D4P BC ADMIN"
         table "D4P BC Environment Operation" = X,
         table "D4P BC Reschedule Plan Line" = X,
         table "D4P BC Partner Center" = X,
+        table "D4P Entra App Registration" = X,
+        table "D4P Entra Certificate" = X,
+        table "D4P Entra Secret" = X,
 
         // Pages
         page "D4P BC Customers List" = X,
