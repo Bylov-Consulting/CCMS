@@ -11,7 +11,7 @@ permissions:
 
 defaults:
   run:
-    shell: pwsh
+    shell: powershell
 
 env:
   ALGoOrgSettings: ${{ vars.ALGoOrgSettings }}
@@ -19,7 +19,7 @@ env:
 
 jobs:
   DeployALDoc:
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     name: Deploy Reference Documentation
     environment:
       name: github-pages
@@ -32,18 +32,18 @@ jobs:
         id: init
         uses: Freddy-D4P/AL-Go/Actions/WorkflowInitialize@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Determine ArtifactUrl
         id: determineArtifactUrl
         uses: Freddy-D4P/AL-Go/Actions/DetermineArtifactUrl@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Determine Deployment Environments
         id: DetermineDeploymentEnvironments
@@ -51,7 +51,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           getEnvironments: 'github-pages'
           type: 'Publish'
 
@@ -62,7 +62,7 @@ jobs:
       - name: Build Reference Documentation
         uses: Freddy-D4P/AL-Go/Actions/BuildReferenceDocumentation@main
         with:
-          shell: pwsh
+          shell: powershell
           artifacts: 'latest'
           artifactUrl: ${{ env.artifact }}
 
@@ -82,6 +82,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           telemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
           currentJobContext: ${{ toJson(job) }}

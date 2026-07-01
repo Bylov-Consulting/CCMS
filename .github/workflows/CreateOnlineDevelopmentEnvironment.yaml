@@ -33,7 +33,7 @@ permissions:
 
 defaults:
   run:
-    shell: pwsh
+    shell: powershell
 
 env:
   ALGoOrgSettings: ${{ vars.ALGoOrgSettings }}
@@ -42,7 +42,7 @@ env:
 jobs:
   Initialization:
     needs: [ ]
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     outputs:
       deviceCode: ${{ steps.authenticate.outputs.deviceCode }}
       githubRunner: ${{ steps.ReadSettings.outputs.GitHubRunnerJson }}
@@ -52,7 +52,7 @@ jobs:
       - name: Dump Workflow Information
         uses: Freddy-D4P/AL-Go/Actions/DumpWorkflowInfo@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -61,19 +61,19 @@ jobs:
         id: init
         uses: Freddy-D4P/AL-Go/Actions/WorkflowInitialize@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read settings
         id: ReadSettings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: 'adminCenterApiCredentials'
 
@@ -114,13 +114,13 @@ jobs:
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: 'adminCenterApiCredentials,TokenForPush'
           useGhTokenWorkflowForPush: '${{ github.event.inputs.useGhTokenWorkflow }}'
@@ -139,7 +139,7 @@ jobs:
       - name: Create Development Environment
         uses: Freddy-D4P/AL-Go/Actions/CreateDevelopmentEnvironment@main
         with:
-          shell: pwsh
+          shell: powershell
           token: ${{ steps.ReadSecrets.outputs.TokenForPush }}
           environmentName: ${{ github.event.inputs.environmentName }}
           project: ${{ github.event.inputs.project }}
@@ -153,6 +153,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           telemetryScopeJson: ${{ needs.Initialization.outputs.telemetryScopeJson }}
           currentJobContext: ${{ toJson(job) }}

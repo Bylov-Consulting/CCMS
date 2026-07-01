@@ -49,7 +49,7 @@ permissions:
 
 defaults:
   run:
-    shell: pwsh
+    shell: powershell
 
 env:
   ALGoOrgSettings: ${{ vars.ALGoOrgSettings }}
@@ -70,14 +70,14 @@ jobs:
         id: ReadSettings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
           get: templateUrl
 
       - name: Get Workflow Multi-Run Branches
         id: GetBranches
         uses: Freddy-D4P/AL-Go/Actions/GetWorkflowMultiRunBranches@main
         with:
-          shell: pwsh
+          shell: powershell
           includeBranches: ${{ github.event.inputs.includeBranches }}
 
       - name: Determine Template URL
@@ -106,7 +106,7 @@ jobs:
       - name: Dump Workflow Information
         uses: Freddy-D4P/AL-Go/Actions/DumpWorkflowInfo@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -117,19 +117,19 @@ jobs:
         id: init
         uses: Freddy-D4P/AL-Go/Actions/WorkflowInitialize@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
           get: commitOptions
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: 'ghTokenWorkflow'
 
@@ -158,7 +158,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           token: ${{ fromJson(steps.ReadSecrets.outputs.Secrets).ghTokenWorkflow }}
           downloadLatest: ${{ env.downloadLatest }}
           update: 'Y'
@@ -172,6 +172,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           telemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
           currentJobContext: ${{ toJson(job) }}

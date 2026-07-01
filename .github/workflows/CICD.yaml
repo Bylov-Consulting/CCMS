@@ -11,7 +11,7 @@ on:
 
 defaults:
   run:
-    shell: pwsh
+    shell: powershell
 
 permissions:
   actions: read
@@ -28,7 +28,7 @@ env:
 jobs:
   Initialization:
     needs: [ ]
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     outputs:
       telemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
       environmentsMatrixJson: ${{ steps.DetermineDeploymentEnvironments.outputs.EnvironmentsMatrixJson }}
@@ -52,7 +52,7 @@ jobs:
       - name: Dump Workflow Information
         uses: Freddy-D4P/AL-Go/Actions/DumpWorkflowInfo@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -63,13 +63,13 @@ jobs:
         id: init
         uses: Freddy-D4P/AL-Go/Actions/WorkflowInitialize@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read settings
         id: ReadSettings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
           get: type,powerPlatformSolutionFolder,useGitSubmodules,trackALAlertsInGitHub
 
       - name: Set AL Code Analysis Var output
@@ -83,7 +83,7 @@ jobs:
         if: env.useGitSubmodules != 'false' && env.useGitSubmodules != ''
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: '-gitSubmodulesToken'
 
@@ -104,7 +104,7 @@ jobs:
         id: determineProjectsToBuild
         uses: Freddy-D4P/AL-Go/Actions/DetermineProjectsToBuild@main
         with:
-          shell: pwsh
+          shell: powershell
           maxBuildDepth: ${{ env.workflowDepth }}
 
       - name: Determine PowerPlatform Solution Folder
@@ -117,7 +117,7 @@ jobs:
         id: DetermineDeliveryTargetSecrets
         uses: Freddy-D4P/AL-Go/Actions/DetermineDeliveryTargets@main
         with:
-          shell: pwsh
+          shell: powershell
           projectsJson: '${{ steps.determineProjectsToBuild.outputs.ProjectsJson }}'
           checkContextSecrets: 'false'
 
@@ -125,7 +125,7 @@ jobs:
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: ${{ steps.DetermineDeliveryTargetSecrets.outputs.ContextSecrets }}
 
@@ -135,7 +135,7 @@ jobs:
         env:
           Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
         with:
-          shell: pwsh
+          shell: powershell
           projectsJson: '${{ steps.determineProjectsToBuild.outputs.ProjectsJson }}'
           checkContextSecrets: 'true'
 
@@ -145,13 +145,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           getEnvironments: '*'
           type: 'CD'
 
   CheckForUpdates:
     needs: [ Initialization ]
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -159,14 +159,14 @@ jobs:
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
           get: templateUrl
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: 'ghTokenWorkflow'
 
@@ -175,7 +175,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           templateUrl: ${{ env.templateUrl }}
           token: ${{ fromJson(steps.ReadSecrets.outputs.Secrets).ghTokenWorkflow }}
           downloadLatest: true
@@ -208,7 +208,7 @@ jobs:
   CodeAnalysisUpload:
     needs: [ Initialization, Build ]
     if: (!cancelled()) && (needs.Initialization.outputs.trackALAlertsInGitHub == 'True')
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     name: Code Analysis Processing
     steps:
       - name: Checkout
@@ -227,7 +227,7 @@ jobs:
         if: (success() || failure())
         uses: Freddy-D4P/AL-Go/Actions/ProcessALCodeAnalysisLogs@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Upload SARIF file to GitHub
         uses: github/codeql-action/upload-sarif@v4
@@ -239,7 +239,7 @@ jobs:
   DeployALDoc:
     needs: [ Initialization, Build ]
     if: (!cancelled()) && (needs.Build.result == 'success' || needs.Build.result == 'skipped') && needs.Initialization.outputs.generateALDocArtifact == 1 && github.ref_name == 'main'
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     name: Deploy Reference Documentation
     permissions:
       contents: read
@@ -261,13 +261,13 @@ jobs:
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Determine ArtifactUrl
         id: determineArtifactUrl
         uses: Freddy-D4P/AL-Go/Actions/DetermineArtifactUrl@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Setup Pages
         if: needs.Initialization.outputs.deployALDocArtifact == 1
@@ -276,7 +276,7 @@ jobs:
       - name: Build Reference Documentation
         uses: Freddy-D4P/AL-Go/Actions/BuildReferenceDocumentation@main
         with:
-          shell: pwsh
+          shell: powershell
           artifacts: '.artifacts'
           artifactUrl: ${{ env.artifact }}
 
@@ -353,7 +353,7 @@ jobs:
         env:
           Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
         with:
-          shell: pwsh
+          shell: powershell
           environmentName: ${{ matrix.environment }}
           artifactsFolder: '.artifacts'
           deploymentEnvironmentsJson: ${{ needs.Initialization.outputs.deploymentEnvironmentsJson }}
@@ -365,7 +365,7 @@ jobs:
       matrix:
         deliveryTarget: ${{ fromJson(needs.Initialization.outputs.deliveryTargetsJson) }}
       fail-fast: false
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     name: Deliver to ${{ matrix.deliveryTarget }}
     steps:
       - name: Checkout
@@ -379,13 +379,13 @@ jobs:
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: '${{ matrix.deliveryTarget }}Context'
 
@@ -394,7 +394,7 @@ jobs:
         env:
           Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
         with:
-          shell: pwsh
+          shell: powershell
           type: 'CD'
           projects: ${{ needs.Initialization.outputs.projects }}
           deliveryTarget: ${{ matrix.deliveryTarget }}
@@ -403,7 +403,7 @@ jobs:
   PostProcess:
     needs: [ Initialization, Build, Deploy, Deliver, DeployALDoc, CodeAnalysisUpload ]
     if: (!cancelled())
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -414,6 +414,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           telemetryScopeJson: ${{ needs.Initialization.outputs.telemetryScopeJson }}
           currentJobContext: ${{ toJson(job) }}

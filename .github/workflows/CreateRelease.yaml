@@ -60,7 +60,7 @@ permissions:
 
 defaults:
   run:
-    shell: pwsh
+    shell: powershell
 
 env:
   ALGoOrgSettings: ${{ vars.ALGoOrgSettings }}
@@ -69,7 +69,7 @@ env:
 jobs:
   CreateRelease:
     needs: [ ]
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     outputs:
       artifacts: ${{ steps.determineArtifactsForRelease.outputs.artifacts }}
       releaseId: ${{ steps.createrelease.outputs.releaseId }}
@@ -80,7 +80,7 @@ jobs:
       - name: Dump Workflow Information
         uses: Freddy-D4P/AL-Go/Actions/DumpWorkflowInfo@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -89,26 +89,26 @@ jobs:
         id: init
         uses: Freddy-D4P/AL-Go/Actions/WorkflowInitialize@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read settings
         id: ReadSettings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
           get: templateUrl,repoName,type,powerPlatformSolutionFolder
 
       - name: Validate Workflow Input
         if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: Freddy-D4P/AL-Go/Actions/ValidateWorkflowInput@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: 'TokenForPush,ghTokenWorkflow'
           useGhTokenWorkflowForPush: '${{ github.event.inputs.useGhTokenWorkflow }}'
@@ -117,14 +117,14 @@ jobs:
         id: determineProjects
         uses: Freddy-D4P/AL-Go/Actions/DetermineProjectsToBuild@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Check for updates to AL-Go system files
         uses: Freddy-D4P/AL-Go/Actions/CheckForUpdates@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           templateUrl: ${{ env.templateUrl }}
           token: ${{ fromJson(steps.ReadSecrets.outputs.Secrets).ghTokenWorkflow }}
           downloadLatest: true
@@ -133,7 +133,7 @@ jobs:
         uses: Freddy-D4P/AL-Go/Actions/DetermineArtifactsForRelease@main
         id: determineArtifactsForRelease
         with:
-          shell: pwsh
+          shell: powershell
           buildVersion: ${{ github.event.inputs.buildVersion }}
           GITHUB_TOKEN: ${{ github.token }}
           TOKENFORPUSH: ${{ steps.ReadSecrets.outputs.TokenForPush }}
@@ -143,7 +143,7 @@ jobs:
         id: createreleasenotes
         uses: Freddy-D4P/AL-Go/Actions/CreateReleaseNotes@main
         with:
-          shell: pwsh
+          shell: powershell
           buildVersion: ${{ github.event.inputs.buildVersion }}
           tag_name: ${{ github.event.inputs.tag }}
           target_commitish: ${{ steps.determineArtifactsForRelease.outputs.commitish }}
@@ -180,7 +180,7 @@ jobs:
 
   UploadArtifacts:
     needs: [ CreateRelease ]
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     name: Upload ${{ matrix.name }}
     strategy:
       matrix: ${{ fromJson(needs.CreateRelease.outputs.artifacts) }}
@@ -192,13 +192,13 @@ jobs:
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: 'nuGetContext,storageContext,TokenForPush'
           useGhTokenWorkflowForPush: '${{ github.event.inputs.useGhTokenWorkflow }}'
@@ -245,7 +245,7 @@ jobs:
         env:
           Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
         with:
-          shell: pwsh
+          shell: powershell
           type: 'Release'
           projects: ${{ matrix.project }}
           deliveryTarget: 'NuGet'
@@ -258,7 +258,7 @@ jobs:
         env:
           Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
         with:
-          shell: pwsh
+          shell: powershell
           type: 'Release'
           projects: ${{ matrix.project }}
           deliveryTarget: 'Storage'
@@ -268,7 +268,7 @@ jobs:
   CreateReleaseBranch:
     needs: [ CreateRelease, UploadArtifacts ]
     if: ${{ github.event.inputs.createReleaseBranch=='true' }}
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -291,7 +291,7 @@ jobs:
   UpdateVersionNumber:
     needs: [ CreateRelease, UploadArtifacts ]
     if: ${{ github.event.inputs.updateVersionNumber!='' }}
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -299,13 +299,13 @@ jobs:
       - name: Read settings
         uses: Freddy-D4P/AL-Go/Actions/ReadSettings@main
         with:
-          shell: pwsh
+          shell: powershell
 
       - name: Read secrets
         id: ReadSecrets
         uses: Freddy-D4P/AL-Go/Actions/ReadSecrets@main
         with:
-          shell: pwsh
+          shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
           getSecrets: 'TokenForPush'
           useGhTokenWorkflowForPush: '${{ github.event.inputs.useGhTokenWorkflow }}'
@@ -313,7 +313,7 @@ jobs:
       - name: Update Version Number
         uses: Freddy-D4P/AL-Go/Actions/IncrementVersionNumber@main
         with:
-          shell: pwsh
+          shell: powershell
           token: ${{ steps.ReadSecrets.outputs.TokenForPush }}
           versionNumber: ${{ github.event.inputs.updateVersionNumber }}
           skipUpdatingDependencies: ${{ github.event.inputs.skipUpdatingDependencies }}
@@ -322,7 +322,7 @@ jobs:
   PostProcess:
     needs: [ CreateRelease, UploadArtifacts, CreateReleaseBranch, UpdateVersionNumber ]
     if: always()
-    runs-on: [ ubuntu-latest ]
+    runs-on: [ self-hosted, Windows ]
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -333,6 +333,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          shell: pwsh
+          shell: powershell
           telemetryScopeJson: ${{ needs.CreateRelease.outputs.telemetryScopeJson }}
           currentJobContext: ${{ toJson(job) }}
