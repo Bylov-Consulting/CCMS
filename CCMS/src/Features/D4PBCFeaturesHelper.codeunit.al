@@ -2,6 +2,7 @@ namespace D4P.CCMS.Features;
 
 using D4P.CCMS.Connector;
 using D4P.CCMS.Environment;
+using D4P.CCMS.General;
 using D4P.CCMS.Setup;
 using D4P.CCMS.Tenant;
 
@@ -185,9 +186,25 @@ codeunit 62014 "D4P BC Features Helper"
     end;
 
     procedure ActivateFeature(var Feature: Record "D4P BC Environment Feature"; UpdateInBackground: Boolean; StartDateTime: DateTime)
+    begin
+        // Backward-compatible UI entry point: delegates to the GUI-free overload
+        // (SkipDialog=false) so the existing success Message() still surfaces in the
+        // client; the returned operation id is discarded for the UI caller.
+        ActivateFeature(Feature, UpdateInBackground, StartDateTime, false);
+    end;
+
+    /// <summary>
+    /// GUI-free overload of ActivateFeature that returns the cloud operation id.
+    /// Performs the same automation-API Microsoft.NAV.Activate POST, guards the success
+    /// Message() behind GuiAllowed() (and SkipDialog), parses the response body via
+    /// "D4P BC Admin API Response".TryGetOperationId, and returns the operation id text
+    /// ('' when the body carries none — feature activation may return an empty/202 body).
+    /// </summary>
+    procedure ActivateFeature(var Feature: Record "D4P BC Environment Feature"; UpdateInBackground: Boolean; StartDateTime: DateTime; SkipDialog: Boolean) OperationId: Text
     var
         BCEnvironment: Record "D4P BC Environment";
         BCTenant: Record "D4P BC Tenant";
+        AdminResponse: Codeunit "D4P BC Admin API Response";
         EnvironmentNotFoundErr: Label 'Environment not found.';
         FailedToActivateErr: Label 'Failed to activate feature. Error details: %1', Comment = '%1 = Error message';
         FailedToObtainTokenErr: Label 'Failed to obtain authentication token.';
@@ -228,7 +245,11 @@ codeunit 62014 "D4P BC Features Helper"
             Error(FailedToActivateErr, ResponseText);
 
         ShowDebugMessage(ResponseText, 'Activate Feature');
-        Message(FeatureActivatedMsg, Feature."Feature Name");
+        if not SkipDialog and GuiAllowed() then
+            Message(FeatureActivatedMsg, Feature."Feature Name");
+
+        // Parse + return any operation id carried in the activation response body.
+        OperationId := AdminResponse.TryGetOperationId(ResponseText);
     end;
 
     procedure DeactivateFeature(var Feature: Record "D4P BC Environment Feature")
@@ -269,7 +290,8 @@ codeunit 62014 "D4P BC Features Helper"
             Error(FailedToDeactivateErr, ResponseText);
 
         ShowDebugMessage(ResponseText, 'Deactivate Feature');
-        Message(FeatureDeactivatedMsg, Feature."Feature Name");
+        if GuiAllowed() then
+            Message(FeatureDeactivatedMsg, Feature."Feature Name");
     end;
 
     local procedure GetFirstCompanyId(BCTenant: Record "D4P BC Tenant"; BCEnvironment: Record "D4P BC Environment"): Text
