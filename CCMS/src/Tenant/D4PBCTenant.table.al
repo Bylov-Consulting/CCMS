@@ -1,6 +1,7 @@
 namespace D4P.CCMS.Tenant;
 
 using D4P.CCMS.Auth;
+using D4P.CCMS.Connector.RestClientOAuth;
 using D4P.CCMS.Customer;
 using D4P.CCMS.PartnerCenter;
 
@@ -142,5 +143,12 @@ table 62001 "D4P BC Tenant"
             exit;
 
         Hyperlink(StrSubstNo('https://businesscentral.dynamics.com/%1/admin', "Tenant ID".ToText().ToLower().Replace('{', '').Replace('}', '')));
+    end;
+
+    procedure GetOAuthClientApplication() OAuthClientApplication: Codeunit "D4P OAuth Appl. Config"
+    begin
+        OAuthClientApplication.SetClientId("Client ID");
+        OAuthClientApplication.SetClientSecret(GetClientSecret());
+        OAuthClientApplication.AddScope('https://api.businesscentral.dynamics.com/.default');
     end;
 }

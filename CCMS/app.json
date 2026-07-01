@@ -11,13 +11,20 @@
   "url": "",
   "logo": "",
   "dependencies": [],
+  "internalsVisibleTo": [
+    {
+      "id": "595a686a-eaae-41b8-b9d2-911401d2b29f",
+      "name": "CCMS.Test",
+      "publisher": "Directions for partners"
+    }
+  ],
   "screenshots": [],
   "platform": "27.0.0.0",
   "application": "27.0.0.0",
   "idRanges": [
     {
       "from": 62000,
-      "to": 62049
+      "to": 62099
     }
   ],
   "resourceExposurePolicy": {
