@@ -1,14 +1,17 @@
 {
-    "folders": [
-        {
-            "path": ".github"
-        },
-        {
-            "path": ".AL-Go"
-        },
-        {
-            "path": "CCMS"
-        }
-    ],
-    "settings": {}
+  "folders": [
+    {
+      "path": ".github"
+    },
+    {
+      "path": ".AL-Go"
+    },
+    {
+      "path": "CCMS"
+    },
+    {
+      "path": "CCMS.Test"
+    }
+  ],
+  "settings": {}
 }

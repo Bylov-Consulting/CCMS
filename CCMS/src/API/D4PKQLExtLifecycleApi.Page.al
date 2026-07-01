@@ -2,7 +2,7 @@ namespace D4P.CCMS.API;
 
 using D4P.CCMS.Telemetry;
 
-page 62056 "D4P KQL Ext Lifecycle API"
+page 62070 "D4P KQL Ext Lifecycle API"
 {
     PageType = API;
     Caption = 'D4P KQL Ext Lifecycle API', Locked = true;

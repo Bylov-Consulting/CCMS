@@ -21,7 +21,7 @@ using System.TestLibraries.Utilities;
 /// yields '' (so a GREEN implementation cannot satisfy the suite by hardcoding
 /// the GUID).
 /// </summary>
-codeunit 50000 "D4P Admin API Response Tests"
+codeunit 62106 "D4P Admin API Response Tests"
 {
     Subtype = Test;
     TestPermissions = Disabled;

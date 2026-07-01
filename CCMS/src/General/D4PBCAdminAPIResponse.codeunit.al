@@ -12,7 +12,7 @@ namespace D4P.CCMS.General;
 /// cloud operation id is discarded and the async poll contract (return
 /// operationId) cannot be satisfied. This codeunit centralises extracting that id.
 /// </summary>
-codeunit 62004 "D4P BC Admin API Response"
+codeunit 62042 "D4P BC Admin API Response"
 {
     Access = Public;
 

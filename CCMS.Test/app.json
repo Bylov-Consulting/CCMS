@@ -1,8 +1,8 @@
 {
-  "id": "b1f7c3a4-2d6e-4e9a-9c1b-7a4e5d8f0c21",
-  "name": "Cloud Customer Management Solution.Test",
+  "id": "595a686a-eaae-41b8-b9d2-911401d2b29f",
+  "name": "CCMS.Test",
   "publisher": "Directions for partners",
-  "version": "1.5.0.0",
+  "version": "1.0.0.0",
   "brief": "Test suite for Cloud Customer Management Solution",
   "description": "Automated tests for CCMS admin-API helpers, action-plane wrappers, and operation parsing.",
   "privacyStatement": "",
@@ -15,7 +15,7 @@
       "id": "e33746ef-a796-46ca-8a1a-fb3840a42c48",
       "name": "Cloud Customer Management Solution",
       "publisher": "Directions for partners",
-      "version": "1.5.0.0"
+      "version": "0.0.2.0"
     },
     {
       "id": "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
@@ -42,8 +42,8 @@
   "runtime": "16.0",
   "idRanges": [
     {
-      "from": 50000,
-      "to": 50099
+      "from": 62100,
+      "to": 62199
     }
   ],
   "features": [

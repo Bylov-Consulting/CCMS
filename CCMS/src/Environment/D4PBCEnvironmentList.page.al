@@ -19,6 +19,7 @@ page 62003 "D4P BC Environment List"
     Editable = false;
     PageType = List;
     UsageCategory = Lists;
+    PopulateAllFields = true;
 
     layout
     {
@@ -179,7 +180,10 @@ page 62003 "D4P BC Environment List"
                     BCTenant: Record "D4P BC Tenant";
                     EnvironmentManagement: Codeunit "D4P BC Environment Mgt";
                 begin
-                    BCTenant.Get(Rec."Customer No.", Rec."Tenant ID");
+                    if Rec."Customer No." = '' then
+                        BCTenant.Get(Rec.GetFilter("Customer No."), Rec.GetFilter("Tenant ID"))
+                    else
+                        BCTenant.Get(Rec."Customer No.", Rec."Tenant ID");
                     EnvironmentManagement.GetEnvironments(BCTenant);
                 end;
             }
@@ -278,6 +282,23 @@ page 62003 "D4P BC Environment List"
                     RenameEnvironmentDialog.SetCurrentBCEnvironment(Rec.Name);
                     if RenameEnvironmentDialog.RunModal() = Action::OK then
                         RenameEnvironmentDialog.RenameEnvironment();
+                end;
+            }
+            action(BulkRescheduleUpdate)
+            {
+                Caption = 'Bulk Reschedule Updates';
+                Image = Timesheet;
+                // Hide the action from users who cannot execute the orchestrator (e.g. read-only).
+                AccessByPermission = codeunit "D4P BC Bulk Reschedule Mgt" = X;
+                ToolTip = 'Reschedule updates for multiple selected environments.';
+                trigger OnAction()
+                var
+                    Environment: Record "D4P BC Environment";
+                    Orchestrator: Codeunit "D4P BC Bulk Reschedule Mgt";
+                begin
+                    CurrPage.SetSelectionFilter(Environment);
+                    Orchestrator.RunBulkReschedule(Environment);
+                    CurrPage.Update(false);
                 end;
             }
             action(DeleteAllFetched)
@@ -467,6 +488,9 @@ page 62003 "D4P BC Environment List"
                 {
                 }
                 actionref(RenameEnvironmentPromoted; RenameEnvironment)
+                {
+                }
+                actionref(BulkRescheduleUpdatePromoted; BulkRescheduleUpdate)
                 {
                 }
             }

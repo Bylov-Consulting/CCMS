@@ -21,7 +21,7 @@ using System.TestLibraries.Utilities;
 /// back and asserts array length 2 plus the exact per-element values. A serializer
 /// that dropped a row, mislabeled a field, or scrambled the date format would fail.
 /// </summary>
-codeunit 50001 "D4P Avail Updates Ser Tests"
+codeunit 62107 "D4P Avail Updates Ser Tests"
 {
     Subtype = Test;
     TestPermissions = Disabled;

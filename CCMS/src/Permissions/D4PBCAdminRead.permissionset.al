@@ -6,6 +6,7 @@ using D4P.CCMS.Customer;
 using D4P.CCMS.Environment;
 using D4P.CCMS.Extension;
 using D4P.CCMS.Features;
+using D4P.CCMS.PartnerCenter;
 using D4P.CCMS.Operations;
 using D4P.CCMS.General;
 using D4P.CCMS.Session;
@@ -37,6 +38,8 @@ permissionset 62001 "D4P BC ADMIN READ"
         tabledata "D4P AppInsights Connection" = R,
         tabledata "D4P PTE Object Range" = R,
         tabledata "D4P BC Environment Operation" = R,
+        tabledata "D4P BC Reschedule Plan Line" = R,
+        tabledata "D4P BC Partner Center" = R,
 
         // Table Objects
         table "D4P BC Customer" = X,
@@ -57,6 +60,8 @@ permissionset 62001 "D4P BC ADMIN READ"
         table "D4P AppInsights Connection" = X,
         table "D4P PTE Object Range" = X,
         table "D4P BC Environment Operation" = X,
+        table "D4P BC Reschedule Plan Line" = X,
+        table "D4P BC Partner Center" = X,
 
         // Pages - List and Card pages for viewing
         page "D4P BC Customers List" = X,
@@ -85,6 +90,7 @@ permissionset 62001 "D4P BC ADMIN READ"
         page "D4P BC Customer FactBox" = X,
         page "D4P BC Admin Headline" = X,
         page "D4P BC Capacity List" = X,
+        page "D4P BC Partner Center List" = X,
 
         // Codeunit for reading data
         codeunit "D4P BC Environment Mgt" = X,
@@ -93,6 +99,9 @@ permissionset 62001 "D4P BC ADMIN READ"
         codeunit "D4P KQL Query Store Init" = X,
         codeunit "D4P Telemetry Helper" = X,
         codeunit "D4P BC Operations Helper" = X,
+        // The read-path JSON parsing now lives in this codeunit, so read-only users
+        // must be able to execute it (e.g. when viewing available updates).
+        codeunit "D4P BC Update Parser" = X,
 
         // Reports - needed for telemetry queries
         report "D4P Load Data" = X,
